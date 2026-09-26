@@ -42,7 +42,7 @@ Le chiavi non entrano nell'immagine né nel frontend. `.env` e `.data` sono escl
 
 ## Comportamenti implementati
 
-- Tema scuro neutro predefinito, ispirato a ChatGPT: superfici antracite, testi bianchi/grigi, pulsanti principali chiari e tipografia sans-serif. Coerente anche su accesso, impostazioni, modalità voce e icone PWA.
+- Tema scuro neutro predefinito: superfici antracite, pulsanti principali chiari e accenti salvia su marchio, selezioni e focus. Su mobile: comandi principali da 44 px, messaggi da 16 px, impostazioni in pannelli dal basso e quattro tab sempre visibili. Lo storico chiuso non riceve il focus; le finestre scorrono anche sugli schermi bassi. I flussi di chat, voce, repository e strumenti restano invariati.
 - Storico in SQLite/WAL, scelta fissa dell'agente per chat, progetto opzionale `owner/repository`.
 - Storico raggruppato per repository, con una sezione unica per le chat libere. Dal menu ⋯ si può rinominare o eliminare una chat; il titolo manuale resta invariato nei turni successivi. L’eliminazione rimuove messaggi, attività e run, e sincronizza le finestre aperte. I checkout e la cache audio condivisa rimangono sul volume; nessun file Git viene cancellato. I task attivi vanno conclusi o fermati prima.
 - **Impostazioni → Voce**: modelli OpenRouter per trascrizione e sintesi, più identificativo della voce. Catalogo aggiornato da OpenRouter, con validazione della modalità del modello; la voce deve essere compatibile con il provider scelto. Le preferenze sono persistite in SQLite, prevalgono sui valori di `.env` e si applicano ai nuovi audio senza riavvio. “Ripristina predefiniti” riprende i valori del server. Le chiavi restano sul server; queste impostazioni non cambiano il modello delle CLI.

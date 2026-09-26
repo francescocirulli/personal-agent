@@ -649,7 +649,18 @@ function App() {
       {sidebar && (
         <button className="scrim" aria-label="Chiudi menu" onClick={() => setSidebar(false)} />
       )}
-      <aside className={`sidebar ${sidebar ? 'open' : ''}`}>
+      <aside
+        id="chat-sidebar"
+        className={`sidebar ${sidebar ? 'open' : ''}`}
+        aria-label="Conversazioni"
+      >
+        <button
+          className="icon-button sidebar-close"
+          aria-label="Chiudi storico"
+          onClick={() => setSidebar(false)}
+        >
+          <X size={20} />
+        </button>
         <a
           className="brand"
           href="/"
@@ -676,7 +687,7 @@ function App() {
             setSidebar(false);
           }}
         >
-          <Plus size={18} /> Nuova chat <span className="keycap">＋</span>
+          <Plus size={18} /> Nuova chat
         </button>
         <label className="search">
           <Search size={15} />
@@ -689,7 +700,7 @@ function App() {
           />
         </label>
         <div className="section-label">
-          IL TUO SPAZIO <span>{chats.length}</span>
+          CONVERSAZIONI <span>{chats.length}</span>
         </div>
         <nav className="chat-list" aria-label="Storico chat">
           {!!search.trim() && (
@@ -715,6 +726,7 @@ function App() {
                   <div className={`chat-row ${selected === c.id ? 'active' : ''}`} key={c.id}>
                     <button
                       className={`chat-link ${selected === c.id ? 'active' : ''}`}
+                      aria-current={selected === c.id ? 'page' : undefined}
                       onClick={() => choose(c.id)}
                     >
                       <span>
@@ -754,7 +766,7 @@ function App() {
             {connected
               ? activeCount
                 ? `${activeCount} task in corso`
-                : 'Il tuo spazio è connesso'
+                : 'Connesso'
               : 'Riconnessione in corso…'}
           </div>
           <button className="quiet" onClick={enablePush}>
@@ -766,7 +778,7 @@ function App() {
           <div className="profile">
             <span className="avatar">TU</span>
             <span>
-              Spazio personale<small>Solo tuo. Sempre con te.</small>
+              Spazio personale<small>Claude Code · Codex</small>
             </span>
           </div>
         </div>
@@ -776,12 +788,14 @@ function App() {
           <button
             className="icon-button mobile-menu"
             aria-label="Apri menu"
+            aria-expanded={sidebar}
+            aria-controls="chat-sidebar"
             onClick={() => setSidebar(true)}
           >
             <Menu size={21} />
           </button>
           <div className="breadcrumb">
-            <span>Il tuo spazio</span>
+            <span>Personal Agent</span>
             {current && (
               <>
                 <span className="slash">/</span>
@@ -839,39 +853,32 @@ function App() {
         {!selected ? (
           <section className="welcome">
             <div className="eyebrow">
-              <span className="little-line" /> UNO SPAZIO PER LE TUE IDEE
+              <span className="little-line" /> PERSONAL AGENT
             </div>
-            <h1>
-              Tu parli.
-              <br />
-              Le idee prendono forma.
-            </h1>
-            <p>
-              Un pensiero da esplorare, qualcosa da costruire.
-              <br />I tuoi agenti, pronti a lavorare con te.
-            </p>
+            <h1>Su cosa lavoriamo?</h1>
+            <p>Scegli Claude Code o Codex. Scrivi, parla o apri un repository.</p>
             <button className="primary start-button" onClick={() => setCreate(true)}>
               <Plus size={18} /> Inizia una conversazione
             </button>
             <div className="welcome-cards">
               <div>
                 <MessageCircle size={22} />
-                <h3>Parti da un'idea</h3>
-                <p>Una chat libera per ragionare insieme, senza un progetto.</p>
+                <h3>Chat libera</h3>
+                <p>Domande, ricerche e appunti, senza un repository.</p>
               </div>
               <div>
                 <FolderGit2 size={22} />
-                <h3>Portala nel codice</h3>
-                <p>Collega un repository e affida il lavoro al tuo agente.</p>
+                <h3>Repository</h3>
+                <p>Lavora sui tuoi progetti GitHub direttamente dalla chat.</p>
               </div>
               <div>
                 <Headphones size={22} />
-                <h3>Continua a voce</h3>
-                <p>Parla, lascia lavorare, ascolta quando sei pronto.</p>
+                <h3>Voce</h3>
+                <p>Detta un messaggio e ascolta le risposte.</p>
               </div>
             </div>
             <div className="welcome-note">
-              <AudioLines size={16} /> Claude Code e Codex. Nel tuo ritmo.
+              <AudioLines size={16} /> Il lavoro continua anche quando chiudi l’app.
             </div>
           </section>
         ) : !current ? (
@@ -892,14 +899,10 @@ function App() {
                   <div className="empty-orb">
                     <AudioLines size={34} />
                   </div>
-                  <h2>Hai un'idea in mente?</h2>
-                  <p>
-                    Scrivila qui sotto o apri la modalità voce.
-                    <br />
-                    Questa conversazione è il tuo punto di partenza.
-                  </p>
+                  <h2>Scrivi il primo messaggio</h2>
+                  <p>Puoi allegare file o usare la voce.</p>
                   <button className="soft-button" disabled={!settings} onClick={startVoice}>
-                    <AudioLines size={17} /> Parliamone
+                    <AudioLines size={17} /> Usa la voce
                   </button>
                 </div>
               )}
@@ -1101,9 +1104,7 @@ function App() {
                 <textarea
                   aria-label="Messaggio"
                   placeholder={
-                    working
-                      ? 'Scrivi un messaggio da aggiungere alla coda…'
-                      : 'Scrivi un messaggio o parliamone…'
+                    working ? 'Aggiungi un messaggio alla coda…' : 'Scrivi un messaggio…'
                   }
                   value={draft}
                   disabled={sending || !draftReady}
@@ -1304,7 +1305,7 @@ function App() {
             >
               <X size={20} />
             </button>
-            <div className="eyebrow">IL TUO SPAZIO</div>
+            <div className="eyebrow">IMPOSTAZIONI</div>
             <h2 id="preferences-title">Impostazioni voce</h2>
             <nav className="settings-tabs" aria-label="Sezioni impostazioni">
               <button aria-current="page">Voce</button>
@@ -1435,9 +1436,9 @@ function App() {
             >
               <X size={20} />
             </button>
-            <div className="eyebrow">UN NUOVO INIZIO</div>
-            <h2 id="new-title">Di cosa ci occupiamo?</h2>
-            <p>Scegli il tuo agente. Al resto pensate insieme.</p>
+            <div className="eyebrow">NUOVA CONVERSAZIONE</div>
+            <h2 id="new-title">Nuova chat</h2>
+            <p>Scegli un agente e, se serve, un repository.</p>
             <form onSubmit={newChat}>
               <label>Il tuo agente</label>
               <div className="agent-options">

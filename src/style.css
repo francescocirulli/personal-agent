@@ -24,6 +24,7 @@ body {
 }
 button,
 input,
+select,
 textarea {
   font: inherit;
 }
@@ -48,12 +49,14 @@ a {
 }
 button:focus-visible,
 a:focus-visible,
-summary:focus-visible {
-  outline: 3px solid #a8a8a8;
+summary:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--signature);
   outline-offset: 3px;
 }
-input:focus,
-textarea:focus {
+.composer textarea:focus {
   outline: none;
 }
 button {
@@ -73,6 +76,7 @@ button svg {
   display: flex;
   height: 100dvh;
   overflow: hidden;
+  isolation: isolate;
 }
 .sidebar {
   width: 272px;
@@ -91,7 +95,7 @@ button svg {
   font-weight: 650;
   letter-spacing: -0.6px;
   font-size: 21px;
-  margin: 0 10px 34px;
+  margin: 0 10px 26px;
   color: #363636;
 }
 .brand-light {
@@ -120,24 +124,23 @@ button svg {
   font-weight: 550;
   box-shadow: 0 2px 3px #30303004;
 }
-.keycap {
-  margin-left: auto;
-  color: #989898;
-  font-size: 16px;
-}
 .search {
   display: flex;
   align-items: center;
   gap: 9px;
-  margin: 22px 10px 28px;
-  color: #979797;
+  margin: 14px 0 24px;
+  padding: 0 12px;
+  min-height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--muted);
 }
 .search input {
   border: 0;
   background: none;
   min-width: 0;
   width: 100%;
-  font-size: 12px;
+  font-size: 14px;
   color: #505050;
 }
 .section-label {
@@ -186,13 +189,13 @@ button svg {
   overflow: hidden;
   text-overflow: ellipsis;
   font-weight: 500;
-  font-size: 13px;
+  font-size: 14px;
 }
 .chat-link small {
   display: block;
   margin-top: 5px;
   color: #8c8c8c;
-  font-size: 10px;
+  font-size: 12px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -272,8 +275,8 @@ button svg {
   background: var(--paper);
 }
 .topbar {
-  height: 76px;
-  min-height: 76px;
+  height: 68px;
+  min-height: 68px;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -307,7 +310,10 @@ button svg {
   color: #878787;
 }
 .icon-button {
-  padding: 8px;
+  padding: 10px;
+  min-width: 44px;
+  min-height: 44px;
+  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -328,6 +334,8 @@ button svg {
 }
 .welcome {
   width: min(860px, 100%);
+  min-height: 0;
+  overflow-y: auto;
   margin: auto;
   padding: 64px 48px 48px;
 }
@@ -343,7 +351,7 @@ button svg {
 .little-line {
   width: 24px;
   height: 1px;
-  background: #9f9f9f;
+  background: var(--signature);
 }
 .welcome h1 {
   font-family: inherit;
@@ -366,9 +374,10 @@ button svg {
   gap: 9px;
   background: var(--accent);
   color: #f2f2f2;
-  padding: 13px 19px;
-  border-radius: 24px;
-  font-size: 12px;
+  padding: 13px 20px;
+  min-height: 48px;
+  border-radius: 14px;
+  font-size: 14px;
   font-weight: 500;
   transition: background 0.2s;
 }
@@ -387,7 +396,10 @@ button svg {
   border-top: 1px solid var(--border);
 }
 .welcome-cards > div {
-  padding: 6px 8px 0 0;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: #ffffff02;
 }
 .welcome-cards svg {
   color: #969696;
@@ -396,20 +408,20 @@ button svg {
 }
 .welcome-cards h3 {
   font-weight: 550;
-  font-size: 12px;
+  font-size: 14px;
   margin-bottom: 9px;
 }
 .welcome-cards p {
   font-size: 12px;
   color: #979797;
   line-height: 1.7;
-  max-width: 190px;
+  max-width: 220px;
 }
 .welcome-note {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 10px;
+  font-size: 12px;
   color: #aeaeae;
   margin-top: 36px;
 }
@@ -485,7 +497,7 @@ button svg {
   align-items: center;
 }
 .message-body {
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1.8;
   color: #4c4c4c;
   overflow-wrap: anywhere;
@@ -541,8 +553,9 @@ button svg {
   align-items: center;
   margin-top: 14px;
   color: #929292;
-  font-size: 10px;
-  padding: 5px 0;
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 10px;
 }
 .listen:hover,
 .listen.listening {
@@ -586,6 +599,7 @@ button svg {
   gap: 8px;
   border: 1px solid #e2e2e2;
   padding: 10px 15px;
+  min-height: 44px;
   border-radius: 12px;
   color: #6d6d6d;
   background: #f3f3f3;
@@ -599,11 +613,12 @@ button svg {
 }
 .message-actions {
   display: flex;
-  gap: 22px;
+  gap: 8px;
+  flex-wrap: wrap;
   align-items: center;
 }
 .message-actions .listen {
-  min-height: 40px;
+  min-height: 44px;
 }
 .message-queue {
   border: 1px solid var(--border);
@@ -657,7 +672,7 @@ button svg {
   padding: 15px 16px 11px;
 }
 .composer:focus-within {
-  border-color: #acacac;
+  border-color: var(--signature);
 }
 .composer textarea {
   width: 100%;
@@ -667,7 +682,7 @@ button svg {
   min-height: 44px;
   max-height: 150px;
   color: #505050;
-  font-size: 14px;
+  font-size: 16px;
   line-height: 1.5;
 }
 .composer textarea::placeholder {
@@ -694,9 +709,12 @@ button svg {
   display: flex;
   gap: 5px;
   align-items: center;
-  padding: 7px 9px;
-  border-radius: 6px;
-  font-size: 10px;
+  padding: 10px;
+  min-width: 44px;
+  min-height: 44px;
+  justify-content: center;
+  border-radius: 12px;
+  font-size: 12px;
   color: #7c7c7c;
 }
 .voice-button:hover {
@@ -705,9 +723,10 @@ button svg {
 .send-button {
   background: #525252;
   color: #f4f4f4;
-  border-radius: 8px;
-  width: 33px;
-  height: 33px;
+  border-radius: 50%;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -715,8 +734,9 @@ button svg {
 .composer-caption {
   text-align: center;
   color: #adadad;
-  font-size: 9px;
-  margin: 11px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  margin: 8px 0 0;
 }
 .run-progress {
   background: #f3f3f3;
@@ -830,19 +850,20 @@ button svg {
 }
 .modal h2 {
   font-family: inherit;
-  font-size: 31px;
+  font-size: 28px;
   font-weight: 600;
   letter-spacing: -1px;
-  margin: 17px 0 11px;
+  margin: 12px 36px 12px 0;
 }
 .modal > p {
-  font-size: 12px;
-  color: #9d9d9d;
-  margin-bottom: 29px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--muted);
+  margin-bottom: 24px;
 }
 .modal label {
   display: block;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 550;
   margin: 22px 0 11px;
 }
@@ -869,7 +890,7 @@ button svg {
   background: #f2f2f2;
 }
 .agent-options strong {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 500;
 }
 .agent-options button > svg {
@@ -894,8 +915,8 @@ button svg {
 }
 .modal small {
   display: block;
-  font-size: 10px;
-  color: #a5a5a5;
+  font-size: 12px;
+  color: #b7b7b7;
   line-height: 1.6;
   margin-top: 10px;
 }
@@ -1133,13 +1154,15 @@ button svg {
     left: 0;
     top: 0;
     bottom: 0;
-    width: 290px;
+    width: min(320px, calc(100vw - 44px));
+    visibility: hidden;
     z-index: 22;
     transform: translateX(-100%);
     transition: transform 0.22s;
     padding-top: max(30px, env(safe-area-inset-top));
   }
   .sidebar.open {
+    visibility: visible;
     transform: translateX(0);
   }
   .scrim {
@@ -1185,7 +1208,7 @@ button svg {
     margin-top: 26px;
   }
   .welcome > p {
-    font-size: 13px;
+    font-size: 15px;
   }
   .welcome-cards {
     grid-template-columns: 1fr;
@@ -1197,7 +1220,7 @@ button svg {
     display: grid;
     grid-template-columns: 30px 1fr;
     column-gap: 12px;
-    padding: 0;
+    padding: 16px;
   }
   .welcome-cards svg {
     grid-row: span 2;
@@ -1209,7 +1232,7 @@ button svg {
   .welcome-cards p {
     max-width: none;
     margin: 0;
-    font-size: 11px;
+    font-size: 13px;
   }
   .welcome-note {
     margin-top: 30px;
@@ -1217,8 +1240,8 @@ button svg {
   .chat-toolbar {
     align-items: stretch;
     flex-direction: column;
-    gap: 8px;
-    padding: 10px 16px;
+    gap: 6px;
+    padding: 8px 16px;
   }
   .chat-title {
     font-size: 16px;
@@ -1227,7 +1250,8 @@ button svg {
     padding: 12px 20px;
   }
   .message-body {
-    font-size: 14px;
+    font-size: 16px;
+    line-height: 1.75;
   }
   .composer-area {
     padding: 10px 14px max(12px, env(safe-area-inset-bottom));
@@ -1240,7 +1264,7 @@ button svg {
     font-size: 16px;
   }
   .composer-caption {
-    font-size: 8px;
+    font-size: 11px;
   }
   .modal {
     padding: 30px 24px;
@@ -1310,6 +1334,8 @@ button svg {
   --muted: #a3a3a3;
   --border: #3d3d3d;
   --paper: #212121;
+  --signature: #b8c9ac;
+  --signature-surface: #30362d;
 }
 .sidebar {
   background: #171717;
@@ -1321,8 +1347,9 @@ button svg {
   color: #ababab;
 }
 .brand-icon {
-  background: #424242;
-  color: #e6e6e6;
+  background: var(--signature-surface);
+  color: var(--signature);
+  border: 1px solid #4b5544;
 }
 .new-chat {
   border-color: #434343;
@@ -1349,7 +1376,7 @@ button svg {
   color: #bebebe;
 }
 .chat-link.active {
-  background: #303030;
+  background: transparent;
   color: #ededed;
 }
 .chat-link small,
@@ -1429,8 +1456,10 @@ button svg {
   color: #e0e0e0;
 }
 .empty-orb {
-  background: #353535;
-  color: #c6c6c6;
+  background: var(--signature-surface);
+  color: var(--signature);
+  border: 1px solid #4b5544;
+  border-radius: 22px;
 }
 .soft-button {
   background: #2f2f2f;
@@ -1488,7 +1517,7 @@ button svg {
 }
 .agent-options button.chosen {
   background: #383838;
-  border-color: #a9a9a9;
+  border-color: var(--signature);
 }
 .agent-options button > svg {
   color: #dbdbdb;
@@ -1576,6 +1605,7 @@ button svg {
 }
 .chat-row.active {
   background: #303030;
+  box-shadow: inset 3px 0 var(--signature);
 }
 .chat-row .chat-link {
   flex: 1;
@@ -1694,7 +1724,7 @@ button svg {
 }
 .project-mode button[aria-pressed='true'] {
   background: #383838;
-  border-color: #a9a9a9;
+  border-color: var(--signature);
   color: #e3e3e3;
 }
 .repository-picker > small {
@@ -1856,7 +1886,7 @@ button svg {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  padding: 6px 24px;
+  padding: 0 24px;
   border-bottom: 1px solid var(--border);
 }
 .mcp-strip .text-button {
@@ -1864,7 +1894,8 @@ button svg {
   align-items: center;
   gap: 7px;
   font-size: 12px;
-  padding: 7px 0;
+  min-height: 44px;
+  padding: 8px 0;
 }
 .mcp-pending {
   flex-wrap: wrap;
@@ -1963,19 +1994,27 @@ button svg {
   border: 0;
 }
 .settings-tabs {
-  display: flex;
-  gap: 8px;
-  margin: 0 0 20px;
-  border-bottom: 1px solid var(--border);
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  margin: 0 0 24px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #1e1e1e;
 }
 .settings-tabs button {
-  padding: 12px 18px;
+  padding: 10px 4px;
+  min-width: 0;
   min-height: 44px;
+  border-radius: 10px;
+  font-size: 13px;
   color: var(--muted);
 }
 .settings-tabs button[aria-current] {
   color: inherit;
-  border-bottom: 2px solid #c0c0c0;
+  background: var(--signature-surface);
+  box-shadow: inset 0 0 0 1px #59634f;
 }
 .mcp-disconnect {
   padding: 12px;
@@ -1987,6 +2026,7 @@ button svg {
   min-height: 44px;
 }
 .browser-open {
+  border-radius: 10px;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -2149,6 +2189,12 @@ button svg {
 .skills-modal select {
   width: 100%;
   min-width: 0;
+  min-height: 44px;
+  padding: 12px;
+  border: 1px solid #4c4c4c;
+  border-radius: 10px;
+  background: #303030;
+  color: #e7e7e7;
 }
 .skills-modal textarea {
   min-height: 240px;
@@ -2335,7 +2381,7 @@ button svg {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 40px;
+  min-height: 44px;
   padding: 5px 10px;
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -2493,7 +2539,7 @@ button svg {
     width: 100%;
   }
   .model-picker summary {
-    min-height: 38px;
+    min-height: 44px;
   }
   .model-picker-agent {
     display: none;
@@ -2905,5 +2951,214 @@ button svg {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+}
+
+/* Shared ergonomics: keep controls reachable in short and narrow viewports. */
+.sidebar-close {
+  display: none;
+}
+.topbar,
+.chat-toolbar,
+.composer-area,
+.mcp-strip {
+  flex-shrink: 0;
+}
+.messages,
+.chat-list,
+.modal,
+.model-picker-panel {
+  overscroll-behavior: contain;
+}
+.modal {
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.dialog-actions {
+  flex-wrap: wrap;
+}
+.message-body a {
+  text-decoration-color: var(--signature);
+  text-underline-offset: 3px;
+}
+.message-body li + li {
+  margin-top: 6px;
+}
+.banner {
+  flex-shrink: 0;
+  overflow-wrap: anywhere;
+}
+.banner button {
+  min-width: 44px;
+  min-height: 44px;
+  flex-shrink: 0;
+}
+.search:focus-within,
+.repo-input:focus-within,
+.repository-search:focus-within {
+  border-color: var(--signature);
+}
+.composer-bottom > div {
+  gap: 4px;
+  margin-left: auto;
+}
+.welcome-cards svg {
+  color: var(--signature);
+}
+@media (max-width: 640px) {
+  .sidebar {
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+  }
+  .sidebar .brand {
+    margin-right: 36px;
+    font-size: 19px;
+  }
+  .sidebar-close {
+    display: inline-flex;
+    position: absolute;
+    right: 8px;
+    top: max(24px, env(safe-area-inset-top));
+  }
+  .search input,
+  .repo-input input,
+  .repository-search input,
+  .modal input:not([type='checkbox']):not([type='file']),
+  .modal select,
+  .modal textarea {
+    font-size: 16px;
+  }
+  .topbar {
+    padding-inline: max(8px, env(safe-area-inset-left)) max(8px, env(safe-area-inset-right));
+    gap: 4px;
+  }
+  .top-actions {
+    gap: 2px;
+  }
+  .breadcrumb > span:only-child {
+    display: inline;
+  }
+  .top-actions .demo-label {
+    max-width: 50px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .welcome {
+    padding: 32px 24px max(24px, env(safe-area-inset-bottom));
+  }
+  .welcome h1 {
+    font-size: clamp(36px, 10vw, 48px);
+    letter-spacing: -1.4px;
+    text-wrap: balance;
+  }
+  .welcome-cards {
+    gap: 10px;
+    margin-top: 28px;
+    padding-top: 0;
+    border-top: 0;
+  }
+  .welcome-note {
+    line-height: 1.6;
+    align-items: flex-start;
+    margin-top: 22px;
+  }
+  .welcome-note svg {
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .model-picker {
+    max-width: 100%;
+    width: 100%;
+  }
+  .model-picker-panel {
+    left: 0;
+    right: auto;
+  }
+  .composer-bottom {
+    flex-wrap: wrap;
+  }
+  .repo-branch-button {
+    flex: 1 1 120px;
+    max-width: 100%;
+  }
+  .repo-empty {
+    font-size: 11px;
+  }
+  .modal-backdrop {
+    align-items: flex-end;
+    padding: max(8px, env(safe-area-inset-top)) 0 0;
+  }
+  .modal {
+    width: 100%;
+    max-width: 100%;
+    max-height: calc(100dvh - max(8px, env(safe-area-inset-top)));
+    padding: 24px 20px max(24px, env(safe-area-inset-bottom));
+    border-radius: 24px 24px 0 0;
+    border-bottom: 0;
+  }
+  .modal h2 {
+    font-size: 25px;
+    letter-spacing: -0.7px;
+  }
+  .modal-close {
+    right: 12px;
+    top: 12px;
+  }
+  .modal .dialog-actions .primary {
+    flex: 1;
+  }
+  .voice-screen {
+    overflow-y: auto;
+  }
+}
+@media (max-width: 360px) {
+  .browser-open > span:not(.status-dot) {
+    display: none;
+  }
+  .browser-open {
+    justify-content: center;
+    min-width: 44px;
+  }
+  .composer-area {
+    padding-inline: 10px;
+  }
+  .composer {
+    padding: 10px;
+  }
+  .voice-button > span {
+    display: none;
+  }
+  .modal {
+    padding-inline: 16px;
+  }
+}
+@media (max-height: 600px) {
+  .sidebar {
+    padding-top: max(12px, env(safe-area-inset-top));
+  }
+  .sidebar .brand {
+    margin-bottom: 12px;
+  }
+  .sidebar-close {
+    top: max(8px, env(safe-area-inset-top));
+  }
+  .search {
+    margin-block: 10px;
+  }
+  .sidebar-footer {
+    padding-top: 8px;
+  }
+  .profile {
+    display: none;
+  }
+  .empty-chat {
+    min-height: 180px;
+  }
+  .empty-orb {
+    display: none;
+  }
+  .composer-caption {
+    display: none;
   }
 }

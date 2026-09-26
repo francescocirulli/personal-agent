@@ -90,7 +90,7 @@ test('mobile chat, background task, history, voice view and text fallback', asyn
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: /Tu parli/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Su cosa lavoriamo?' })).toBeVisible();
   await page.getByRole('button', { name: 'Inizia una conversazione' }).click();
   await page.getByRole('button', { name: 'Codex', exact: true }).click();
   await page.getByRole('button', { name: 'Crea chat' }).click();
@@ -154,7 +154,7 @@ test('mobile chat header stays compact and model controls remain accessible', as
 test('desktop welcome and creating a repository chat', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 960 });
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: /Tu parli/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Su cosa lavoriamo?' })).toBeVisible();
   await page.screenshot({ path: 'test-results/welcome-desktop.png', fullPage: true });
   await page.getByRole('button', { name: 'Inizia una conversazione' }).click();
   await page.getByRole('button', { name: 'Repository GitHub', exact: true }).click();
@@ -320,8 +320,8 @@ test('project groups, renaming, deletion and synchronization across windows', as
   await page.getByRole('button', { name: 'Menu della chat', exact: true }).click();
   await page.getByRole('button', { name: 'Elimina', exact: true }).click();
   await page.getByRole('button', { name: 'Elimina chat', exact: true }).click();
-  await expect(page.getByRole('heading', { name: /Tu parli/ })).toBeVisible();
-  await expect(other.getByRole('heading', { name: /Tu parli/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Su cosa lavoriamo?' })).toBeVisible();
+  await expect(other.getByRole('heading', { name: 'Su cosa lavoriamo?' })).toBeVisible();
   await page.getByRole('button', { name: 'Apri menu', exact: true }).click();
   await expect(group.locator('.chat-row')).toHaveCount(1);
   await expect(group.getByRole('button', { name: `Menu chat: ${title}`, exact: true })).toHaveCount(
