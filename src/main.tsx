@@ -793,31 +793,12 @@ function App() {
           </section>
         ) : (
           <>
-            <div className="chat-heading">
-              <div>
-                <div className="eyebrow">
-                  {current.repo ? (
-                    <>
-                      <FolderGit2 size={13} /> {current.repo}
-                    </>
-                  ) : (
-                    <>
-                      <MessageCircle size={13} /> CHAT LIBERA
-                    </>
-                  )}
-                </div>
-                <h1>
-                  {current.title === 'Nuova conversazione' ? 'Da dove cominciamo?' : current.title}
-                </h1>
-              </div>
-              <span className="agent-pill">
-                <span className={`agent-symbol ${current.agent}`}>
-                  {current.agent === 'claude' ? '✳' : '⌘'}
-                </span>
-                {agentName(current.agent)}
-              </span>
+            <div className="chat-toolbar">
+              <h1 className="chat-title" title={current.title}>
+                {current.title === 'Nuova conversazione' ? 'Da dove cominciamo?' : current.title}
+              </h1>
+              <ModelPicker key={current.id} chat={current} onSaved={() => refresh(current.id)} />
             </div>
-            <ModelPicker key={current.id} chat={current} onSaved={() => refresh(current.id)} />
             <div className="messages" aria-live="polite">
               {!current.messages.length && !working && (
                 <div className="empty-chat">

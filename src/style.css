@@ -413,38 +413,26 @@ button svg {
   color: #aeaeae;
   margin-top: 36px;
 }
-.chat-heading {
-  padding: 30px 40px 20px;
+.chat-toolbar {
+  padding: 12px 40px;
   display: flex;
-  gap: 15px;
+  gap: 20px;
   justify-content: space-between;
   align-items: center;
   max-width: 1000px;
   width: 100%;
   margin: auto;
 }
-.chat-heading .eyebrow {
-  letter-spacing: 0.7px;
-  font-size: 9px;
-}
-.chat-heading h1 {
-  font-size: 21px;
+.chat-title {
+  min-width: 0;
+  font-size: 18px;
   font-weight: 500;
   letter-spacing: -0.5px;
-  margin: 9px 0 0;
-  line-height: 1.4;
-  overflow-wrap: anywhere;
-}
-.agent-pill {
-  display: flex;
-  align-items: center;
-  gap: 7px;
+  margin: 0;
+  line-height: 1.3;
   white-space: nowrap;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  padding: 7px 10px;
-  font-size: 10px;
-  color: #757575;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .agent-symbol {
   font-size: 20px;
@@ -1077,18 +1065,14 @@ button svg {
   .topbar {
     padding: 0 25px;
   }
-  .chat-heading {
-    padding: 25px;
+  .chat-toolbar {
+    padding: 12px 25px;
   }
   .messages {
     padding: 15px 25px;
   }
   .composer-area {
     padding: 15px 25px;
-  }
-  .agent-pill {
-    padding: 6px;
-    font-size: 9px;
   }
 }
 @media (max-width: 640px) {
@@ -1178,20 +1162,14 @@ button svg {
   .welcome-note {
     margin-top: 30px;
   }
-  .chat-heading {
-    padding: 21px 20px 16px;
-    align-items: flex-start;
+  .chat-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 16px;
   }
-  .chat-heading h1 {
-    font-size: 18px;
-  }
-  .agent-pill {
-    font-size: 0;
-    border: 0;
-    padding: 0;
-  }
-  .agent-pill .agent-symbol {
-    font-size: 25px;
+  .chat-title {
+    font-size: 16px;
   }
   .messages {
     padding: 12px 20px;
@@ -1349,7 +1327,7 @@ button svg {
   color: #ededed;
 }
 .welcome h1,
-.chat-heading h1,
+.chat-title,
 .empty-chat h2,
 .modal h2,
 .voice-center h1,
@@ -1374,7 +1352,6 @@ button svg {
 .primary:hover {
   background: #ffffff;
 }
-.agent-pill,
 .agent-symbol.codex {
   color: #cdcdcd;
 }
@@ -2297,21 +2274,91 @@ button svg {
 }
 
 .model-picker {
-  padding: 0 24px 14px;
-  display: grid;
-  gap: 6px;
+  position: relative;
+  min-width: 0;
+  max-width: min(440px, 55%);
+  flex: 0 1 auto;
 }
-.model-picker label {
+.model-picker summary {
   display: flex;
-  gap: 10px;
   align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #2e2e2e;
+  color: #dedede;
+  cursor: pointer;
+  list-style: none;
+}
+.model-picker summary::-webkit-details-marker {
+  display: none;
+}
+.model-picker summary > svg {
+  flex-shrink: 0;
+  margin-left: auto;
+  color: var(--muted);
+  transition: transform 0.2s;
+}
+.model-picker[open] summary > svg {
+  transform: rotate(180deg);
+}
+.model-picker .agent-symbol {
+  flex-shrink: 0;
+}
+.model-picker-current {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  font-size: 12px;
+}
+.model-picker-agent,
+.model-picker-effort {
+  flex-shrink: 0;
+  color: #b3b3b3;
+}
+.model-picker-name {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.model-picker-effort::before {
+  content: '·';
+  margin-right: 7px;
+  color: #858585;
+}
+.model-picker-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 12;
+  display: grid;
+  gap: 12px;
+  width: min(400px, calc(100vw - 32px));
+  max-height: calc(100dvh - 170px);
+  overflow-y: auto;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #292929;
+  box-shadow: 0 12px 30px #0006;
+}
+.model-picker-panel label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12px;
 }
 .model-picker select {
-  max-width: min(100%, 300px);
   min-width: 0;
+  width: 100%;
 }
 .model-picker small {
   color: var(--muted);
+  line-height: 1.4;
 }
 .model-picker form,
 .browser-navigation {
@@ -2390,7 +2437,18 @@ button svg {
     max-height: calc(100dvh - 12px);
   }
   .model-picker {
-    padding: 0 16px 12px;
+    max-width: 100%;
+    width: 100%;
+  }
+  .model-picker summary {
+    min-height: 38px;
+  }
+  .model-picker-agent {
+    display: none;
+  }
+  .model-picker-panel {
+    right: auto;
+    left: 0;
   }
 }
 

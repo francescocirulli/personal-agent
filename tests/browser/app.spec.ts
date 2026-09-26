@@ -120,6 +120,37 @@ test('mobile chat, background task, history, voice view and text fallback', asyn
   expect(overflow).toBe(false);
   expect(errors).toEqual([]);
 });
+test('mobile chat header stays compact and model controls remain accessible', async ({
+  page,
+  request,
+}) => {
+  const chat = await (
+    await request.post('/api/conversations', { data: { agent: 'codex', repo: null } })
+  ).json();
+  try {
+    await page.goto(`/?chat=${chat.id}`);
+    const toolbar = page.locator('.chat-toolbar');
+    await expect(toolbar.getByRole('heading', { name: 'Da dove cominciamo?' })).toBeVisible();
+    expect((await toolbar.boundingBox())!.height).toBeLessThanOrEqual(95);
+    const picker = toolbar.locator('.model-picker');
+    await expect(picker.getByLabel('Modello della chat')).toBeHidden();
+    await picker.locator('summary').click();
+    await picker.getByLabel('Modello della chat').selectOption('gpt-6-sol');
+    await expect(picker.locator('summary')).toContainText('GPT-6-Sol');
+    await picker.getByLabel('Effort della chat').selectOption('xhigh');
+    await expect(picker.locator('summary')).toContainText('xhigh');
+    await picker.locator('summary').click();
+    await expect(picker.getByLabel('Modello della chat')).toBeHidden();
+    await page.setViewportSize({ width: 320, height: 700 });
+    await expect(toolbar.getByRole('heading', { name: 'Da dove cominciamo?' })).toBeVisible();
+    expect((await toolbar.boundingBox())!.height).toBeLessThanOrEqual(95);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+  } finally {
+    await request.post(`/api/conversations/${chat.id}/delete`, { data: {} });
+  }
+});
 test('desktop welcome and creating a repository chat', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 960 });
   await page.goto('/');
