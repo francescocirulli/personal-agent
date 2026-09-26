@@ -1,3 +1,4 @@
+import type { Effort } from './agent-effort';
 import type { ChatImage } from './images';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
@@ -13,6 +14,7 @@ export interface Conversation {
   agent: Agent;
   repo: string | null;
   model: string | null;
+  effort: Effort;
   session_id: string | null;
   workspace: string | null;
   created_at: number;
@@ -81,6 +83,13 @@ export class Store {
         .some((c) => c.name === 'model')
     )
       this.db.exec('ALTER TABLE conversations ADD COLUMN model TEXT');
+    if (
+      !this.db
+        .prepare('PRAGMA table_info(conversations)')
+        .all()
+        .some((c) => c.name === 'effort')
+    )
+      this.db.exec("ALTER TABLE conversations ADD COLUMN effort TEXT NOT NULL DEFAULT 'high'");
     this.db
       .prepare(
         "UPDATE runs SET status='interrupted',error='Il server è stato riavviato. Il lavoro non viene rieseguito automaticamente.',updated_at=? WHERE status IN ('running','transcribing')",

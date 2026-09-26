@@ -1,3 +1,4 @@
+import { effortLevels } from './agent-effort';
 import { prepareImages, ImageError, type ChatImage } from './images';
 import { agentModels, modelSchema } from './agent-models';
 import express, { type Request, type Response, type NextFunction } from 'express';
@@ -583,6 +584,13 @@ export function createApp(config: Config) {
     const chat = getChat(String(req.params.id));
     const model = modelSchema.parse(req.body.model);
     store.db.prepare('UPDATE conversations SET model=? WHERE id=?').run(model, chat.id);
+    publish({ type: 'changed', conversationId: chat.id });
+    res.json(store.conversation(chat.id));
+  });
+  app.post('/api/conversations/:id/effort', (req, res) => {
+    const chat = getChat(String(req.params.id));
+    const effort = z.enum(effortLevels[chat.agent]).parse(req.body.effort);
+    store.db.prepare('UPDATE conversations SET effort=? WHERE id=?').run(effort, chat.id);
     publish({ type: 'changed', conversationId: chat.id });
     res.json(store.conversation(chat.id));
   });

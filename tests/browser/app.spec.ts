@@ -767,21 +767,25 @@ test('terminal settings: mobile input, controls, reconnect and explicit stop', a
   expect(stops).toBe(1);
 });
 
-test('model picker in existing chats persists selection and accepts custom IDs for both agents', async ({
-  page,
-  request,
-}) => {
+test('model and effort pickers persist selection for both agents', async ({ page, request }) => {
   for (const agent of ['claude', 'codex']) {
     const chat = await (
       await request.post('/api/conversations', { data: { agent, title: 'Scelta modello' } })
     ).json();
     try {
       await page.goto(`/?chat=${chat.id}`);
+      await expect(page.getByLabel('Effort della chat')).toHaveValue('high');
+      await page.getByLabel('Effort della chat').selectOption('low');
+      await expect(page.getByLabel('Effort della chat')).toBeEnabled();
       await page.getByLabel('Modello della chat').selectOption('__custom');
       await page.getByLabel('ID modello', { exact: true }).fill('test-model');
       await page.getByRole('button', { name: 'Salva modello' }).click();
       await expect(page.getByLabel('Modello della chat')).toHaveValue('test-model');
       await page.reload();
+      await expect(page.getByLabel('Effort della chat')).toHaveValue('low');
+      expect((await (await request.get(`/api/conversations/${chat.id}`)).json()).effort).toBe(
+        'low',
+      );
       await expect(page.getByLabel('Modello della chat')).toHaveValue('test-model');
       expect((await (await request.get(`/api/conversations/${chat.id}`)).json()).model).toBe(
         'test-model',

@@ -1,3 +1,4 @@
+import { defaultEffort } from './agent-effort';
 import type { ChatImage } from './images';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdir, mkdtemp, writeFile, rm } from 'node:fs/promises';
@@ -62,6 +63,8 @@ export function commandFor(
       bin: config.claudeBin,
       args: [
         '-p',
+        '--effort',
+        chat.effort ?? defaultEffort,
         ...(imagePaths.length ? ['--input-format', 'stream-json'] : []),
         ...(chat.model ? ['--model', chat.model] : []),
         '--output-format',
@@ -79,6 +82,8 @@ export function commandFor(
       ],
     };
   const common = [
+    '-c',
+    `model_reasoning_effort=${JSON.stringify(chat.effort ?? defaultEffort)}`,
     ...imagePaths.flatMap((file) => ['--image', file]),
     ...(chat.model ? ['--model', chat.model] : []),
     '--json',

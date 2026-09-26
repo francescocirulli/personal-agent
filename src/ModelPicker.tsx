@@ -1,3 +1,4 @@
+import { defaultEffort, effortLevels, type Effort } from '../server/agent-effort';
 import { useEffect, useState } from 'react';
 import { api, type Chat } from './api';
 
@@ -23,6 +24,18 @@ export function ModelPicker({ chat, onSaved }: { chat: Chat; onSaved(): Promise<
       disposed = true;
     };
   }, [chat.id]);
+  async function saveEffort(effort: Effort) {
+    setPending(true);
+    setError('');
+    try {
+      await api(`/conversations/${chat.id}/effort`, { effort });
+      await onSaved();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setPending(false);
+    }
+  }
   async function save(model: string | null) {
     setPending(true);
     setError('');
@@ -63,6 +76,22 @@ export function ModelPicker({ chat, onSaved }: { chat: Chat; onSaved(): Promise<
           <option value="__custom">Altro modello…</option>
         </select>
       </label>
+      <label>
+        Effort
+        <select
+          aria-label="Effort della chat"
+          value={chat.effort ?? defaultEffort}
+          disabled={pending}
+          onChange={(e) => void saveEffort(e.target.value as Effort)}
+        >
+          {effortLevels[chat.agent].map((effort) => (
+            <option key={effort} value={effort}>
+              {effort}
+              {effort === defaultEffort ? ' (predefinito)' : ''}
+            </option>
+          ))}
+        </select>
+      </label>
       {custom && (
         <form
           onSubmit={(e) => {
@@ -86,7 +115,10 @@ export function ModelPicker({ chat, onSaved }: { chat: Chat; onSaved(): Promise<
           </button>
         </form>
       )}
-      <small>Dal prossimo messaggio. {catalog.source}</small>
+      <small>
+        Dal prossimo messaggio. {catalog.source} I livelli di effort supportati dipendono dal
+        modello.
+      </small>
       {error && (
         <p role="alert" className="form-error">
           {error}
