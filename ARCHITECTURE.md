@@ -155,10 +155,10 @@ Responsabilità:
    - `start(conversation, text)` → stream di eventi normalizzati.
    - `resume(conversation, text)` → continua la stessa sessione dell'agente.
    - `cancel(conversation)`.
-   - Un solo run attivo per conversazione. Nell'MVP la UI attende il risultato prima di consentire un nuovo messaggio e il backend rifiuta nuovi turni mentre il run è attivo. Non è necessaria una coda di messaggi.
+   - Un solo run attivo per conversazione. Testo e immagini inviati durante il task sono persistiti in SQLite con stato `queued`, mostrati nella coda e avviati in ordine dal backend dopo la conclusione del processo precedente. La coda continua senza client collegato e sopravvive ai riavvii; i run già iniziati non vengono ripetuti.
    - Chat diverse possono avere run attivi contemporaneamente, con processi, sessioni ed eventi distinti. **[DA DECIDERE]** Limite di concorrenza operativo e gestione della capacità esaurita, senza imporre un unico run globale.
    - Il run è indipendente dalla connessione SSE e dalla presenza della PWA in primo piano: la disconnessione del client non lo cancella.
-   - Correzioni, domande sullo stato e messaggi in coda durante il run sono rimandati. La cancellazione esplicita resta un'operazione separata dall'invio di un turno.
+   - **Invia subito** promuove un messaggio della coda, interrompe il run attivo e attende il suo arresto prima di avviare quello scelto. Gli altri messaggi conservano l’ordine. **Fork** sulle risposte dell’assistente copia atomicamente la cronologia fino alla risposta inclusa e gli allegati, conserva agente/modello/effort/repository e apre una nuova chat. Sessione CLI, browser e workspace restano indipendenti; al primo turno la cronologia copiata viene passata come contesto alla nuova sessione, senza includere messaggi successivi o in coda. Il nuovo checkout non riproduce le modifiche locali del vecchio workspace.
 4. **Estrazione della parte parlata** e **TTS**: vedi §5.
    - Associare il testo da pronunciare e l'eventuale audio a un messaggio persistente, non soltanto al run o alla connessione SSE.
    - Per “Ascolta”, riutilizzare l'audio disponibile oppure generarlo su richiesta dal testo vocale salvato. Non rilanciare la CLI per riascoltare un messaggio; un errore TTS deve essere ritentabile senza rieseguire il task.
@@ -298,7 +298,7 @@ Le cifre seguenti sono stime di design precedenti alla verifica dei provider. **
 - Web Push a fine task o quando serve input, per completare il flusso asincrono dal telefono.
 
 **Fase 2**
-- Correzioni e domande durante il lavoro, con eventuale coda dei messaggi e interruzione vocale.
+- Interruzione vocale; coda testuale con invio immediato e fork delle risposte già disponibili.
 - Server MCP aggiuntivi.
 - Confronto delle voci TTS (gpt-4o-mini-tts vs ElevenLabs vs Voxtral vs Cartesia).
 
@@ -319,7 +319,7 @@ Le cifre seguenti sono stime di design precedenti alla verifica dei provider. **
 - [x] Avvio reale di entrambe le CLI senza repository, due turni con contesto conservato e riascolto TTS verificati nel container
 - [ ] Verifica dell'esperienza sulla PWA installata su iPhone 16, registrando la versione iOS utilizzata
 - [ ] Politica di conservazione dei file audio, mantenendo l'ascolto su richiesta dei messaggi nello storico
-- [x] Comando Ferma task nella UI e terminazione del gruppo di processi; correzioni e coda rimandate
+- [x] Comando Ferma task nella UI e terminazione del gruppo di processi; coda persistente con invio immediato e fork delle risposte
 - [x] Riavvio: run incompleti marcati interrotti, nessuna riesecuzione automatica; storico e sessioni conservati
 - [ ] Runtime, dipendenze e servizi dei repository; preview e strumenti necessari alla parità desktop
 - [x] Fallback TTS: prosa ripulita da blocchi di codice, URL e markdown

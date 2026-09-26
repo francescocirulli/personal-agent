@@ -128,8 +128,8 @@ test('HTTP flow: concurrency, reconnect persistence, cancellation, malformed inp
       202,
     );
     assert.equal(
-      (await request(`/conversations/${a.id}/turns`, { text: 'Duplicate' })).status,
-      409,
+      (await request(`/conversations/${a.id}/turns`, { text: 'Messaggio in coda' })).status,
+      202,
     );
     assert.equal((await request(`/conversations/${a.id}/delete`, {})).status, 409);
     assert.equal((await request(`/conversations/${a.id}/rename`, { title: '  ' })).status, 400);
@@ -151,11 +151,12 @@ test('HTTP flow: concurrency, reconnect persistence, cancellation, malformed inp
     assert.match(new TextDecoder().decode(chunk.value), /data:/);
     sseController.abort();
     await request(`/conversations/${b.id}/cancel`, {});
-    await delay(1600);
+    await delay(3000);
     const detail = (await (await request(`/conversations/${a.id}`)).json()) as any;
     assert.equal(detail.runs[0].status, 'complete');
     assert.equal(detail.title, 'Titolo scelto da me');
-    assert.equal(detail.messages.length, 2);
+    assert.equal(detail.messages.length, 4);
+    assert.equal(detail.queue.length, 0);
     assert.ok(detail.messages[1].voice_text);
     assert.equal(
       ((await (await request(`/conversations/${b.id}`)).json()) as any).runs[0].status,

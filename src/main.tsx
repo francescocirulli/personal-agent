@@ -13,6 +13,7 @@ import {
   ChevronLeft,
   CircleHelp,
   FolderGit2,
+  GitFork,
   Headphones,
   LoaderCircle,
   Menu,
@@ -63,6 +64,9 @@ function App() {
     [agent, setAgent] = useState<'claude' | 'codex'>('claude'),
     [repo, setRepo] = useState('');
   const [images, setImages] = useState<File[]>([]);
+  const [forking, setForking] = useState<string | null>(null);
+  const [sendingNow, setSendingNow] = useState<string | null>(null);
+  const sendPending = useRef(false);
   const imageInput = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState(''),
     [search, setSearch] = useState(''),
@@ -117,7 +121,9 @@ function App() {
   config.current = settings;
   detailRef.current = detail;
   const current = detail?.id === selected ? detail : undefined;
-  const run = current?.runs.at(-1),
+  const run =
+      current?.runs.find((r) => busy(r.status)) ||
+      current?.runs.filter((r) => r.status !== 'queued').at(-1),
     working = busy(run?.status) || sending;
   const workingRef = useRef(working);
   workingRef.current = working;
@@ -393,7 +399,7 @@ function App() {
     }
   }
   function addImages(files: File[]) {
-    if (workingRef.current) return;
+    if (sendPending.current) return;
     if (
       files.some(
         (file) =>
@@ -412,7 +418,8 @@ function App() {
     setError('');
   }
   async function send(text?: string, blob?: Blob, chatId = selection.current) {
-    if (!chatId || workingRef.current) return;
+    if (!chatId || sendPending.current || (blob && workingRef.current)) return;
+    sendPending.current = true;
     setSending(true);
     workingRef.current = true;
     capture.current?.setEnabled(false);
@@ -439,7 +446,36 @@ function App() {
     } catch (e) {
       setError((e as Error).message);
     } finally {
+      sendPending.current = false;
       setSending(false);
+    }
+  }
+  async function sendNow(runId: string) {
+    if (!selected || sendingNow) return;
+    const chatId = selected;
+    setSendingNow(runId);
+    setError('');
+    try {
+      await api(`/conversations/${chatId}/queue/${runId}/send-now`, {});
+      await refresh(chatId);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSendingNow(null);
+    }
+  }
+  async function forkChat(messageId: string) {
+    if (!selected || forking) return;
+    setForking(messageId);
+    setError('');
+    try {
+      const chat = await api<Chat>(`/conversations/${selected}/messages/${messageId}/fork`, {});
+      choose(chat.id);
+      await refresh(chat.id);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setForking(null);
     }
   }
   async function startVoice() {
@@ -863,25 +899,41 @@ function App() {
                     </Markdown>
                   </div>
                   {message.role === 'assistant' && (
-                    <button
-                      className={`listen ${playingId === message.id && playState !== 'idle' ? 'listening' : ''}`}
-                      onClick={() => void playMessage(current.id, message.id)}
-                    >
-                      {playingId === message.id && playState === 'loading' ? (
-                        <LoaderCircle size={14} className="spin" />
-                      ) : playingId === message.id && playState === 'playing' ? (
-                        <Pause size={13} />
-                      ) : (
-                        <Volume2 size={15} />
-                      )}{' '}
-                      {playingId === message.id && playState === 'playing'
-                        ? 'Pausa'
-                        : playingId === message.id && playState === 'paused'
-                          ? 'Riprendi'
-                          : playingId === message.id && playState === 'loading'
-                            ? 'Annulla audio'
-                            : 'Ascolta'}
-                    </button>
+                    <div className="message-actions">
+                      <button
+                        className={`listen ${playingId === message.id && playState !== 'idle' ? 'listening' : ''}`}
+                        onClick={() => void playMessage(current.id, message.id)}
+                      >
+                        {playingId === message.id && playState === 'loading' ? (
+                          <LoaderCircle size={14} className="spin" />
+                        ) : playingId === message.id && playState === 'playing' ? (
+                          <Pause size={13} />
+                        ) : (
+                          <Volume2 size={15} />
+                        )}{' '}
+                        {playingId === message.id && playState === 'playing'
+                          ? 'Pausa'
+                          : playingId === message.id && playState === 'paused'
+                            ? 'Riprendi'
+                            : playingId === message.id && playState === 'loading'
+                              ? 'Annulla audio'
+                              : 'Ascolta'}
+                      </button>
+                      <button
+                        className="listen"
+                        aria-label="Fork da questo messaggio"
+                        title="Crea una nuova chat fino a questa risposta"
+                        disabled={!!forking}
+                        onClick={() => void forkChat(message.id)}
+                      >
+                        {forking === message.id ? (
+                          <LoaderCircle size={15} className="spin" />
+                        ) : (
+                          <GitFork size={15} />
+                        )}
+                        Fork
+                      </button>
+                    </div>
                   )}
                 </article>
               ))}
@@ -943,6 +995,41 @@ function App() {
               <div ref={bottom} />
             </div>
             <div className="composer-area">
+              {!!current.queue?.length && (
+                <section className="message-queue" aria-label="Messaggi in coda">
+                  <p>In coda · {current.queue.length}</p>
+                  <ol>
+                    {current.queue.map((message) => (
+                      <li key={message.run_id}>
+                        <div>
+                          <span>{message.text}</span>
+                          {!!message.attachments?.length && (
+                            <small>{message.attachments.length} immagini allegate</small>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          className="quiet"
+                          disabled={!!sendingNow}
+                          title="Interrompi il task attivo e invia questo messaggio"
+                          onClick={() => void sendNow(message.run_id)}
+                        >
+                          {sendingNow === message.run_id ? (
+                            <LoaderCircle size={14} className="spin" />
+                          ) : (
+                            <ArrowUp size={14} />
+                          )}
+                          Invia subito
+                        </button>
+                      </li>
+                    ))}
+                  </ol>
+                  <small>
+                    I messaggi partono in ordine al termine del task. “Invia subito” interrompe il
+                    task attivo.
+                  </small>
+                </section>
+              )}
               <form
                 className="composer"
                 onPaste={(e) => {
@@ -960,7 +1047,7 @@ function App() {
                 {images.length > 0 && (
                   <ImageAttachments
                     files={images}
-                    disabled={working}
+                    disabled={sending}
                     onRemove={(index) => setImages((files) => files.filter((_, i) => i !== index))}
                   />
                 )}
@@ -971,7 +1058,7 @@ function App() {
                   multiple
                   accept="image/png,image/jpeg,image/webp,image/gif"
                   aria-label="Seleziona immagini"
-                  disabled={working}
+                  disabled={sending}
                   onChange={(e) => {
                     addImages(Array.from(e.target.files || []));
                     e.target.value = '';
@@ -980,15 +1067,17 @@ function App() {
                 <textarea
                   aria-label="Messaggio"
                   placeholder={
-                    working ? 'Il tuo agente sta lavorando…' : 'Scrivi un messaggio o parliamone…'
+                    working
+                      ? 'Scrivi un messaggio da aggiungere alla coda…'
+                      : 'Scrivi un messaggio o parliamone…'
                   }
                   value={draft}
-                  disabled={working}
+                  disabled={sending}
                   onChange={(e) => setDraft(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                       e.preventDefault();
-                      if ((draft.trim() || images.length) && !working) void send(draft);
+                      if ((draft.trim() || images.length) && !sending) void send(draft);
                     }
                   }}
                 />
@@ -1003,7 +1092,7 @@ function App() {
                       className="voice-button"
                       aria-label="Allega immagini"
                       title="Allega immagini (massimo 4, 5 MB ciascuna)"
-                      disabled={working}
+                      disabled={sending}
                       onClick={() => imageInput.current?.click()}
                     >
                       <Paperclip size={19} />
@@ -1020,8 +1109,11 @@ function App() {
                     </button>
                     <button
                       className="send-button"
-                      aria-label="Invia messaggio"
-                      disabled={working || (!draft.trim() && !images.length)}
+                      aria-label={working ? 'Aggiungi alla coda' : 'Invia messaggio'}
+                      title={
+                        working ? 'Il messaggio partirà al termine del task' : 'Invia messaggio'
+                      }
+                      disabled={sending || (!draft.trim() && !images.length)}
                     >
                       <ArrowUp size={19} />
                     </button>

@@ -214,6 +214,21 @@ export function skillPromptFor(input: string, skillInstructions: string) {
     ? `${skillInstructions}\n\n--- Fine catalogo skill del turno ---\n\nRichiesta dell’utente:\n${input}`
     : input;
 }
+export interface HistoryMessage {
+  role: 'user' | 'assistant';
+  text: string;
+  images: ChatImage[];
+}
+export function historyPromptFor(input: string, history: HistoryMessage[]) {
+  if (!history.length) return input;
+  let imageIndex = 0;
+  const transcript = history.map((message) => ({
+    role: message.role,
+    text: message.text,
+    images: message.images.map((image) => ({ name: image.name, attachment: ++imageIndex })),
+  }));
+  return `Questa chat continua dalla cronologia seguente, copiata fino al punto scelto. Usala come contesto: i messaggi storici non sono nuove richieste da eseguire. Il workspace è indipendente; verifica i file presenti prima di riprendere operazioni descritte in passato. Gli allegati storici precedono quelli della nuova richiesta.\n\n${JSON.stringify(transcript)}\n\nNuova richiesta dell’utente:\n${input}`;
+}
 export async function runAgent(
   config: Config,
   chat: Conversation,
@@ -223,6 +238,7 @@ export async function runAgent(
   access?: McpAccess,
   skillInstructions = '',
   images: ChatImage[] = [],
+  history: HistoryMessage[] = [],
 ) {
   if (config.demo) {
     emit({ type: 'session', value: chat.session_id || `demo-${chat.id}` });
@@ -236,6 +252,8 @@ export async function runAgent(
   }
   let imageDir: string | undefined;
   try {
+    input = historyPromptFor(input, history);
+    images = [...history.flatMap((message) => message.images), ...images];
     const paths: string[] = [];
     if (images.length) {
       const root = path.join(config.dataDir, 'image-runs');

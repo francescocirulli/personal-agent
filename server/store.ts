@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto';
 
 export type Agent = 'claude' | 'codex';
 export type RunStatus =
-  'transcribing' | 'running' | 'complete' | 'error' | 'cancelled' | 'interrupted';
+  'queued' | 'transcribing' | 'running' | 'complete' | 'error' | 'cancelled' | 'interrupted';
 export interface Conversation {
   id: string;
   title: string;
@@ -59,6 +59,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS conversations (id TEXT PRIMARY KEY, title TEXT NOT NULL, agent TEXT NOT NULL, repo TEXT, session_id TEXT, workspace TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL REFERENCES conversations(id), status TEXT NOT NULL, error TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
       CREATE UNIQUE INDEX IF NOT EXISTS one_active_run ON runs(conversation_id) WHERE status IN ('running','transcribing');
+      CREATE TABLE IF NOT EXISTS run_queue (run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE, priority INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS messages (id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL REFERENCES conversations(id), run_id TEXT NOT NULL REFERENCES runs(id), role TEXT NOT NULL, text TEXT NOT NULL, voice_text TEXT NOT NULL, created_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS attachments (id TEXT PRIMARY KEY, message_id TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE, name TEXT NOT NULL, mime TEXT NOT NULL, data BLOB NOT NULL);
       CREATE INDEX IF NOT EXISTS attachments_message ON attachments(message_id);
@@ -99,7 +100,7 @@ export class Store {
   list() {
     return this.db
       .prepare(
-        `SELECT c.*, (SELECT status FROM runs WHERE conversation_id=c.id ORDER BY created_at DESC,rowid DESC LIMIT 1) AS status FROM conversations c ORDER BY updated_at DESC`,
+        `SELECT c.*, (SELECT status FROM runs WHERE conversation_id=c.id ORDER BY CASE WHEN status IN ('running','transcribing') THEN 0 WHEN status='queued' THEN 1 ELSE 2 END,created_at DESC,rowid DESC LIMIT 1) AS status FROM conversations c ORDER BY updated_at DESC`,
       )
       .all() as unknown as (Conversation & { status: RunStatus | null })[];
   }
@@ -119,7 +120,9 @@ export class Store {
   }
   messages(id: string) {
     const messages = this.db
-      .prepare('SELECT * FROM messages WHERE conversation_id=? ORDER BY created_at,rowid')
+      .prepare(
+        "SELECT m.* FROM messages m JOIN runs r ON r.id=m.run_id WHERE m.conversation_id=? AND r.status<>'queued' ORDER BY m.created_at,m.rowid",
+      )
       .all(id) as unknown as Message[];
     return messages.map((m) => ({ ...m, attachments: this.attachments(m.id) }));
   }
@@ -127,6 +130,91 @@ export class Store {
     return this.db
       .prepare('SELECT id,name,mime FROM attachments WHERE message_id=? ORDER BY rowid')
       .all(messageId) as unknown as Attachment[];
+  }
+  messageImages(messageId: string): ChatImage[] {
+    return this.db
+      .prepare('SELECT name,mime,data FROM attachments WHERE message_id=? ORDER BY rowid')
+      .all(messageId)
+      .map((row) => ({
+        name: String(row.name),
+        mime: 'image/jpeg',
+        data: Buffer.from(row.data as Uint8Array),
+      }));
+  }
+  queue(conversationId: string) {
+    return (
+      this.db
+        .prepare(
+          `SELECT m.* FROM messages m JOIN runs r ON r.id=m.run_id
+      JOIN run_queue q ON q.run_id=r.id WHERE r.conversation_id=? AND r.status='queued'
+      ORDER BY q.priority DESC,r.created_at,r.rowid`,
+        )
+        .all(conversationId) as unknown as Message[]
+    ).map((m) => ({ ...m, attachments: this.attachments(m.id) }));
+  }
+  enqueue(conversationId: string, text: string, images: ChatImage[]) {
+    const runId = randomUUID(),
+      now = Date.now();
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      this.db
+        .prepare('INSERT INTO runs VALUES (?,?,?,?,?,?)')
+        .run(runId, conversationId, 'queued', null, now, now);
+      this.writeMessage(conversationId, runId, 'user', text, '', images);
+      this.db.prepare('INSERT INTO run_queue(run_id) VALUES (?)').run(runId);
+      this.touch(conversationId);
+      this.db.exec('COMMIT');
+      return runId;
+    } catch (e) {
+      this.db.exec('ROLLBACK');
+      throw e;
+    }
+  }
+  fork(conversationId: string, messageId: string) {
+    const source = this.conversation(conversationId)!;
+    const history = this.messages(conversationId);
+    const index = history.findIndex((m) => m.id === messageId && m.role === 'assistant');
+    if (index < 0) throw new Error('Risposta non trovata.');
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const chat = this.create(source.agent, source.repo, `${source.title.slice(0, 90)} · Fork`);
+      this.db
+        .prepare('UPDATE conversations SET model=?,effort=?,title_custom=1 WHERE id=?')
+        .run(source.model, source.effort, chat.id);
+      const runs = new Map<string, string>();
+      for (const message of history.slice(0, index + 1)) {
+        let runId = runs.get(message.run_id);
+        if (!runId) {
+          runId = randomUUID();
+          runs.set(message.run_id, runId);
+          const original = this.db.prepare('SELECT * FROM runs WHERE id=?').get(message.run_id)!;
+          this.db
+            .prepare('INSERT INTO runs VALUES (?,?,?,?,?,?)')
+            .run(
+              runId,
+              chat.id,
+              original.status,
+              original.error,
+              original.created_at,
+              original.updated_at,
+            );
+        }
+        const id = this.writeMessage(
+          chat.id,
+          runId,
+          message.role,
+          message.text,
+          message.voice_text,
+          this.messageImages(message.id),
+        );
+        this.db.prepare('UPDATE messages SET created_at=? WHERE id=?').run(message.created_at, id);
+      }
+      this.db.exec('COMMIT');
+      return this.conversation(chat.id)!;
+    } catch (e) {
+      this.db.exec('ROLLBACK');
+      throw e;
+    }
   }
   rename(id: string, title: string) {
     this.db
@@ -186,16 +274,10 @@ export class Store {
     voice = '',
     images: ChatImage[] = [],
   ) {
-    const id = randomUUID();
     this.db.exec('BEGIN IMMEDIATE');
+    let id: string;
     try {
-      this.db
-        .prepare('INSERT INTO messages VALUES (?,?,?,?,?,?,?)')
-        .run(id, conversationId, runId, role, text, voice, Date.now());
-      for (const image of images)
-        this.db
-          .prepare('INSERT INTO attachments VALUES (?,?,?,?,?)')
-          .run(randomUUID(), id, image.name, image.mime, image.data);
+      id = this.writeMessage(conversationId, runId, role, text, voice, images);
       this.db.exec('COMMIT');
     } catch (e) {
       this.db.exec('ROLLBACK');
@@ -203,6 +285,27 @@ export class Store {
     }
     this.touch(conversationId);
     return this.message(id)!;
+  }
+  private writeMessage(
+    conversationId: string,
+    runId: string,
+    role: Message['role'],
+    text: string,
+    voice: string,
+    images: ChatImage[],
+  ) {
+    const id = randomUUID();
+    const last = this.db
+      .prepare('SELECT max(created_at) AS time FROM messages WHERE conversation_id=?')
+      .get(conversationId)?.time;
+    this.db
+      .prepare('INSERT INTO messages VALUES (?,?,?,?,?,?,?)')
+      .run(id, conversationId, runId, role, text, voice, Math.max(Date.now(), Number(last || 0)));
+    for (const image of images)
+      this.db
+        .prepare('INSERT INTO attachments VALUES (?,?,?,?,?)')
+        .run(randomUUID(), id, image.name, image.mime, image.data);
+    return id;
   }
   touch(id: string) {
     this.db.prepare('UPDATE conversations SET updated_at=? WHERE id=?').run(Date.now(), id);

@@ -53,6 +53,7 @@ export function createApp(config: Config) {
   const events = new EventEmitter();
   events.setMaxListeners(100);
   const active = new Map<string, { controller: AbortController; promise: Promise<void> }>();
+  let closing = false;
   const streams = new Set<Response>();
   const presence = new Map<
     string,
@@ -126,6 +127,7 @@ export function createApp(config: Config) {
     text?: string,
     file?: Express.Multer.File,
     images: ChatImage[] = [],
+    savedMessage = false,
   ) {
     let failed = false;
     let mcpAccess: ReturnType<McpService['access']> | undefined;
@@ -135,7 +137,10 @@ export function createApp(config: Config) {
       const signal = controller.signal;
       const prompt = file ? await audio.transcribe(file.buffer, file.mimetype, signal) : text!;
       signal.throwIfAborted();
-      store.addMessage(chat.id, runId, 'user', prompt, '', images);
+      const history = chat.session_id
+        ? []
+        : store.messages(chat.id).filter((m) => m.run_id !== runId);
+      if (!savedMessage) store.addMessage(chat.id, runId, 'user', prompt, '', images);
       if (chat.title === 'Nuova conversazione') {
         store.db
           .prepare('UPDATE conversations SET title=? WHERE id=? AND title_custom=0')
@@ -214,6 +219,11 @@ export function createApp(config: Config) {
         mcpAccess,
         skillAccess.instructions,
         images,
+        history.map((message) => ({
+          role: message.role,
+          text: message.text,
+          images: store.messageImages(message.id),
+        })),
       );
       signal.throwIfAborted();
       if (protocolFailure) throw new Error(protocolFailure);
@@ -235,11 +245,68 @@ export function createApp(config: Config) {
     } finally {
       mcpAccess?.release();
       browserAccess?.release();
-      await skillAccess?.release();
-      active.delete(chat.id);
+      try {
+        await skillAccess?.release();
+      } finally {
+        active.delete(chat.id);
+        drainQueue();
+      }
     }
     await notify(chat, failed);
   }
+
+  function startRun(
+    chat: Conversation,
+    runId: string,
+    text?: string,
+    file?: Express.Multer.File,
+    images: ChatImage[] = [],
+    savedMessage = false,
+  ) {
+    const controller = new AbortController();
+    const handle = { controller, promise: Promise.resolve() };
+    active.set(chat.id, handle);
+    publish({ type: 'started', conversationId: chat.id, runId });
+    handle.promise = execute(chat, runId, controller, text, file, images, savedMessage);
+  }
+  function drainQueue() {
+    if (closing) return;
+    const waiting = store.db
+      .prepare(
+        `SELECT r.* FROM runs r JOIN run_queue q ON q.run_id=r.id
+      WHERE r.status='queued' ORDER BY q.priority DESC,r.created_at,r.rowid`,
+      )
+      .all();
+    for (const row of waiting) {
+      if (active.size >= config.maxRuns) break;
+      const chatId = String(row.conversation_id),
+        runId = String(row.id);
+      if (active.has(chatId)) continue;
+      const chat = getChat(chatId);
+      const message = store.db
+        .prepare("SELECT * FROM messages WHERE run_id=? AND role='user'")
+        .get(runId)!;
+      const images = store.messageImages(String(message.id));
+      // Put a queued message after the preceding reply when it actually starts.
+      const last = store.messages(chatId).at(-1)?.created_at || 0;
+      const now = Math.max(Date.now(), last + 1);
+      store.db.exec('BEGIN IMMEDIATE');
+      try {
+        store.db
+          .prepare("UPDATE runs SET status='running',created_at=?,updated_at=? WHERE id=?")
+          .run(now, now, runId);
+        store.db.prepare('UPDATE messages SET created_at=? WHERE id=?').run(now, message.id);
+        store.db.prepare('DELETE FROM run_queue WHERE run_id=?').run(runId);
+        store.db.exec('COMMIT');
+      } catch (e) {
+        store.db.exec('ROLLBACK');
+        throw e;
+      }
+      startRun(chat, runId, String(message.text), undefined, images, true);
+    }
+  }
+  // Pending messages survive restart; previously running tasks remain interrupted.
+  queueMicrotask(() => drainQueue());
 
   app.disable('x-powered-by');
   // Railway's health checker uses its own Host header. Expose only liveness
@@ -575,7 +642,36 @@ export function createApp(config: Config) {
       messages: store.messages(chat.id),
       runs: store.runs(chat.id),
       activity: store.activities(chat.id),
+      queue: store.queue(chat.id),
     });
+  });
+  app.post('/api/conversations/:id/messages/:messageId/fork', (req, res) => {
+    const chat = getChat(String(req.params.id));
+    const message = store.message(String(req.params.messageId));
+    if (!message || message.conversation_id !== chat.id || message.role !== 'assistant')
+      throw new HttpError(404, 'Puoi creare un fork solo da una risposta di questa chat.');
+    const fork = store.fork(chat.id, message.id);
+    publish({ type: 'changed', conversationId: fork.id });
+    res.status(201).json(fork);
+  });
+  app.post('/api/conversations/:id/queue/:runId/send-now', (req, res) => {
+    const chat = getChat(String(req.params.id));
+    const runId = String(req.params.runId);
+    const run = store.runs(chat.id).find((r) => r.id === runId);
+    if (!run) throw new HttpError(404, 'Messaggio non trovato.');
+    if (run.status === 'running' || run.status === 'transcribing')
+      return res.status(202).json({ runId });
+    if (run.status !== 'queued') throw new HttpError(409, 'Questo messaggio è già stato inviato.');
+    store.db
+      .prepare(
+        'UPDATE run_queue SET priority=(SELECT coalesce(max(priority),0)+1 FROM run_queue) WHERE run_id=?',
+      )
+      .run(runId);
+    active.get(chat.id)?.controller.abort();
+    publish({ type: 'queued', conversationId: chat.id, runId });
+    // The old process must finish shutting down before the replacement can start.
+    drainQueue();
+    res.status(202).json({ runId });
   });
   app.get('/api/conversations/:id/models', async (req, res) => {
     res.json(await agentModels(getChat(String(req.params.id)).agent));
@@ -633,13 +729,6 @@ export function createApp(config: Config) {
     ]),
     async (req, res) => {
       let chat = getChat(String(req.params.id));
-      if (active.has(chat.id))
-        throw new HttpError(409, 'Questa chat sta già lavorando. Attendi il risultato.');
-      if (active.size >= config.maxRuns)
-        throw new HttpError(
-          429,
-          `Sono già attivi ${config.maxRuns} task. Riprova quando uno termina.`,
-        );
       const files = (req.files || {}) as Record<string, Express.Multer.File[]>;
       const audioFile = files.audio?.[0];
       const imageFiles = files.images || [];
@@ -662,28 +751,33 @@ export function createApp(config: Config) {
       const images = await prepareImages(imageFiles);
       // Image decoding yields: recheck state before reserving a run.
       chat = getChat(chat.id);
-      if (active.has(chat.id)) throw new HttpError(409, 'Questa chat sta già lavorando.');
-      if (active.size >= config.maxRuns)
+      if (audioFile && (active.has(chat.id) || store.queue(chat.id).length))
+        throw new HttpError(
+          409,
+          'Attendi la fine del task per inviare una registrazione. Puoi scrivere un messaggio in coda.',
+        );
+      if (!active.has(chat.id) && !store.queue(chat.id).length && active.size >= config.maxRuns)
         throw new HttpError(429, 'Tutti gli agenti sono occupati. Riprova tra poco.');
+      if (!audioFile) {
+        if (store.queue(chat.id).length >= 50)
+          throw new HttpError(429, 'La coda contiene già 50 messaggi. Attendi che si liberi.');
+        const runId = store.enqueue(chat.id, text || 'Descrivi le immagini allegate.', images);
+        publish({ type: 'queued', conversationId: chat.id, runId });
+        drainQueue();
+        return res
+          .status(202)
+          .json({
+            runId,
+            queued: store.runs(chat.id).find((r) => r.id === runId)?.status === 'queued',
+          });
+      }
       const runId = randomUUID(),
-        now = Date.now(),
-        controller = new AbortController();
+        now = Date.now();
       store.db
         .prepare('INSERT INTO runs VALUES (?,?,?,?,?,?)')
         .run(runId, chat.id, audioFile ? 'transcribing' : 'running', null, now, now);
       store.touch(chat.id);
-      // Install the reservation before any async operation. HTTP disconnect never owns this controller.
-      const handle = { controller, promise: Promise.resolve() };
-      active.set(chat.id, handle);
-      publish({ type: 'started', conversationId: chat.id, runId });
-      handle.promise = execute(
-        chat,
-        runId,
-        controller,
-        text || (images.length ? 'Descrivi le immagini allegate.' : undefined),
-        audioFile,
-        images,
-      );
+      startRun(chat, runId, undefined, audioFile);
       res.status(202).json({ runId });
     },
   );
@@ -832,6 +926,7 @@ export function createApp(config: Config) {
     skills,
     terminal,
     async close() {
+      closing = true;
       for (const handle of active.values()) handle.controller.abort();
       await Promise.allSettled([...active.values()].map((h) => h.promise));
       mcp.close();

@@ -805,6 +805,7 @@ test('model and effort pickers persist selection for both agents', async ({ page
     ).json();
     try {
       await page.goto(`/?chat=${chat.id}`);
+      await page.locator('.model-picker > summary').click();
       await expect(page.getByLabel('Effort della chat')).toHaveValue('high');
       await page.getByLabel('Effort della chat').selectOption('low');
       await expect(page.getByLabel('Effort della chat')).toBeEnabled();
@@ -813,6 +814,7 @@ test('model and effort pickers persist selection for both agents', async ({ page
       await page.getByRole('button', { name: 'Salva modello' }).click();
       await expect(page.getByLabel('Modello della chat')).toHaveValue('test-model');
       await page.reload();
+      await page.locator('.model-picker > summary').click();
       await expect(page.getByLabel('Effort della chat')).toHaveValue('low');
       expect((await (await request.get(`/api/conversations/${chat.id}`)).json()).effort).toBe(
         'low',

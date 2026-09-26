@@ -1,6 +1,11 @@
 import type { Conversation, Message, Run, Activity, RunStatus } from '../server/store';
 export type Chat = Conversation & { status?: RunStatus | null };
-export type Detail = Chat & { messages: Message[]; runs: Run[]; activity: Activity[] };
+export type Detail = Chat & {
+  messages: Message[];
+  runs: Run[];
+  activity: Activity[];
+  queue: Message[];
+};
 export interface Settings {
   demo: boolean;
   voiceAvailable: boolean;
