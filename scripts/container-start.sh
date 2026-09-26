@@ -5,7 +5,7 @@ set -eu
 if [ "$(id -u)" = "0" ]; then
   mkdir -p /data
   find /data -xdev -uid 0 -exec chown --no-dereference node:node {} +
-  exec gosu node "$0" "$@"
+  exec gosu node env HOME=/data/home "$0" "$@"
 fi
 mkdir -p /data/home /data/home/.codex /data/home/.claude /data/tools/bin
 export PA_TOOLS_PREFIX=/data/tools
