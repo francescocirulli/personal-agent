@@ -1,3 +1,4 @@
+import { BranchPicker } from './BranchPicker';
 import { useDraft, deleteDraft } from './useDraft';
 import { FileCards } from './FileCards';
 import { QueuePanel } from './QueuePanel';
@@ -301,6 +302,11 @@ function App() {
     });
     stream.onmessage = (event) => {
       const e = JSON.parse(event.data);
+      if (
+        e.conversationId === selection.current &&
+        ['changed', 'done', 'run_error', 'started'].includes(e.type)
+      )
+        window.dispatchEvent(new Event('git-change'));
       if (e.type === 'browser_changed') {
         window.dispatchEvent(new Event('browser-change'));
         return;
@@ -1111,10 +1117,12 @@ function App() {
                   }}
                 />
                 <div className="composer-bottom">
-                  <span>
-                    <FolderGit2 size={14} />
-                    {current.repo?.split('/')[1] || 'Nessun progetto'}
-                  </span>
+                  <BranchPicker
+                    key={current.id}
+                    chat={current}
+                    running={working}
+                    onSaved={() => refresh(current.id)}
+                  />
                   <div>
                     <button
                       type="button"

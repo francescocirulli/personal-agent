@@ -2655,3 +2655,255 @@ button svg {
   outline-offset: 5px;
   border-radius: 8px;
 }
+
+.composer-bottom {
+  gap: 8px;
+}
+.composer-bottom > div {
+  flex-shrink: 0;
+}
+.repo-branch-button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  min-height: 44px;
+  max-width: 55%;
+  padding: 4px 6px;
+  background: transparent;
+  color: #bbb;
+  border: 0;
+  border-radius: 8px;
+  text-align: left;
+}
+.repo-branch-button:hover {
+  background: #3b3b3b;
+}
+.repo-branch-button > svg {
+  flex-shrink: 0;
+}
+.repo-branch-button > span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.repo-branch-button strong {
+  font-size: 12px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.repo-branch-button small {
+  display: block;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.repo-branch-button small svg {
+  vertical-align: middle;
+  margin-right: 3px;
+}
+.repo-empty {
+  min-width: 0;
+}
+.branch-sheet {
+  position: fixed;
+  inset: auto 0 0;
+  margin: 0 auto;
+  width: min(100%, 520px);
+  max-width: 100%;
+  max-height: 88dvh;
+  padding: 0;
+  border: 1px solid #4a4a4a;
+  border-radius: 22px 22px 0 0;
+  color: #eee;
+  background: #252525;
+  overflow: hidden;
+}
+.branch-sheet::backdrop {
+  background: #0009;
+}
+.branch-sheet-content {
+  display: flex;
+  flex-direction: column;
+  max-height: 88dvh;
+}
+.branch-sheet header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 18px;
+  border-bottom: 1px solid #444;
+  flex-shrink: 0;
+}
+.branch-sheet h2 {
+  font-size: 18px;
+  margin: 0;
+}
+.branch-sheet header button {
+  width: 44px;
+  height: 44px;
+}
+.branch-sheet-scroll {
+  padding: 16px 18px max(20px, env(safe-area-inset-bottom));
+  overflow-y: auto;
+  min-height: 0;
+  overscroll-behavior: contain;
+}
+.branch-sheet p {
+  margin: 0 0 14px;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.branch-repository {
+  color: #bbb;
+}
+.branch-current {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.branch-current svg {
+  flex-shrink: 0;
+}
+.branch-current strong {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.branch-sheet button {
+  font: inherit;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid #555;
+  border-radius: 10px;
+  background: #303030;
+  color: #eee;
+  cursor: pointer;
+}
+.branch-sheet .branch-primary {
+  background: #e5e5e5;
+  color: #222;
+  border-color: #e5e5e5;
+}
+.branch-toolbar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.branch-toolbar button {
+  flex: 1;
+  font-size: 14px;
+}
+.branch-sheet label {
+  display: grid;
+  gap: 8px;
+  font-size: 14px;
+  margin-bottom: 14px;
+}
+.branch-sheet input,
+.branch-sheet select {
+  min-width: 0;
+  width: 100%;
+  min-height: 46px;
+  border: 1px solid #555;
+  border-radius: 10px;
+  background: #202020;
+  color: #eee;
+  font-size: 16px;
+  padding: 10px;
+}
+.branch-create {
+  border: 1px solid #555;
+  padding: 14px;
+  border-radius: 12px;
+  margin-bottom: 18px;
+}
+.branch-create > button {
+  width: 100%;
+}
+.branch-sheet h3 {
+  color: #aaa;
+  font-size: 12px;
+  font-weight: 500;
+  margin: 18px 0 8px;
+}
+.branch-sheet .branch-option {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  margin-bottom: 6px;
+  min-height: 48px;
+}
+.branch-option span {
+  overflow-wrap: anywhere;
+  min-width: 0;
+  flex: 1;
+}
+.branch-option svg {
+  flex-shrink: 0;
+}
+.branch-option[aria-current='true'] {
+  opacity: 1;
+  border-color: #aaa;
+}
+.branch-sheet .branch-help {
+  color: #aaa;
+  font-size: 12px;
+  margin-top: 18px;
+}
+.branch-warning {
+  background: #493b26;
+  color: #f5d7a1;
+  padding: 12px;
+  border-radius: 10px;
+}
+.branch-notice {
+  background: #293e31;
+  color: #c3e9ce;
+  padding: 12px;
+  border-radius: 10px;
+}
+@media (min-width: 761px) {
+  .branch-sheet {
+    inset: 0;
+    margin: auto;
+    height: fit-content;
+    border-radius: 18px;
+  }
+}
+@media (max-width: 400px) {
+  .repo-branch-button {
+    gap: 4px;
+  }
+  .repo-branch-button > svg:first-child {
+    display: none;
+  }
+}
+
+.breadcrumb {
+  min-width: 0;
+}
+.breadcrumb strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 400px) {
+  .top-actions {
+    gap: 4px;
+  }
+  .top-actions .demo-label {
+    max-width: 66px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}

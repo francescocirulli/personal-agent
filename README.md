@@ -187,3 +187,20 @@ La **coda** permette di modificare il testo mantenendo gli allegati, eliminare u
 La ricerca laterale continua a filtrare titolo e repository e aggiunge **Nei messaggi**: cerca sottostringhe letterali nel testo di tutte le conversazioni, ignorando maiuscole e accenti, con estratti e pagine di 40 risultati. I messaggi ancora in coda sono esclusi. Toccando un risultato si apre la chat sul messaggio evidenziato; l’indirizzo conserva il riferimento anche dopo un reload. Il contenuto dei documenti allegati non è indicizzato dalla ricerca.
 
 Le prove in `tests/productivity.test.ts` verificano i documenti con CLI di test per entrambi gli agenti, download autenticati, fork, riavvii, conversione PDF/DOCX/XLSX, esportazioni e controlli della coda. `tests/browser/productivity.spec.ts` verifica bozze con allegati, download, condivisione tramite API simulata, coda e ricerca su viewport mobile. Nessuna di queste prove certifica il menu di condivisione o la persistenza su un iPhone fisico.
+
+## Repository e branch dal telefono
+
+In basso a sinistra nel compositore, **Repository e branch** mostra la repository associata e il branch effettivo del checkout della chat, con un indicatore in presenza di modifiche locali. Il nome lungo viene abbreviato nel compositore ed è leggibile per intero aprendo il pannello. Lo stato viene riletto dopo i task e le operazioni Git, al ritorno nell’app e ogni 15 secondi mentre è visibile: rileva anche cambi effettuati dall’agente o dal terminale.
+
+Sul telefono il pannello si apre dal basso, con scorrimento interno, ricerca dei branch, controlli da almeno 44 pixel e campi da 16 pixel. Permette di:
+
+- **Preparare la repository** prima del primo messaggio, se il clone non esiste ancora.
+- Selezionare un **branch locale** o un branch remoto. Per un remoto viene creato il corrispondente branch locale con tracking; se il nome locale esiste già, l’app chiede di selezionarlo senza sovrascriverlo.
+- Usare **Aggiorna da GitHub** per recuperare i riferimenti da `origin`, senza fare pull o modificare i file locali.
+- Creare un **nuovo branch**, scegliendo come punto di partenza la posizione corrente o un branch locale/remoto, e selezionarlo nella chat.
+
+Il cambio e la creazione richiedono una cartella senza modifiche locali e nessun task attivo o messaggio in coda, anche quando la coda è in pausa. L’interfaccia spiega come sbloccare l’operazione; non esegue stash, reset, commit o push automatici. Durante un’operazione Git il backend impedisce l’avvio di task, altre operazioni Git e l’eliminazione della chat. I comandi manuali nel terminale restano esterni a questo coordinamento. Per cambio branch, creazione e fetch gli hook Git sono disabilitati.
+
+Dopo un cambio la cronologia, gli allegati e le impostazioni restano nella chat. Il prossimo task apre una nuova sessione CLI con la cronologia, per rileggere i file del branch selezionato. Le altre chat conservano il proprio clone e branch. Non vengono creati worktree. Una posizione detached viene indicata con il commit; si può tornare a un branch o crearne uno. In demo, la preparazione crea una repository locale di prova e l’aggiornamento non contatta GitHub.
+
+`tests/git.test.ts` usa repository Git reali temporanee e remoti locali per verificare lettura, creazione, selezione, fetch, tracking, isolamento, persistenza, nomi non validi, modifiche locali e concorrenza. `tests/browser/branches.spec.ts` verifica i flussi mobile a 320 e 390 pixel, inclusi nomi lunghi e assenza di invii accidentali dal pannello.

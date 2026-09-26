@@ -1,3 +1,4 @@
+import { GitService, GitError } from './git';
 import {
   prepareDocuments,
   stageDocuments,
@@ -60,6 +61,9 @@ export function createApp(config: Config) {
   const events = new EventEmitter();
   events.setMaxListeners(100);
   const active = new Map<string, { controller: AbortController; promise: Promise<void> }>();
+  const deletingChats = new Set<string>();
+  const git = new GitService(config);
+  const gitOperations = new Map<string, { controller: AbortController; promise: Promise<void> }>();
   let closing = false;
   const streams = new Set<Response>();
   const presence = new Map<
@@ -328,7 +332,7 @@ export function createApp(config: Config) {
       if (active.size >= config.maxRuns) break;
       const chatId = String(row.conversation_id),
         runId = String(row.id);
-      if (active.has(chatId)) continue;
+      if (active.has(chatId) || gitOperations.has(chatId) || deletingChats.has(chatId)) continue;
       const chat = getChat(chatId);
       const message = store.db
         .prepare("SELECT * FROM messages WHERE run_id=? AND role='user'")
@@ -747,6 +751,113 @@ export function createApp(config: Config) {
     publish({ type: 'changed', conversationId: chat.id });
     res.json({ ok: true });
   });
+  function gitBlocked(chatId: string) {
+    if (deletingChats.has(chatId)) return 'La chat è in eliminazione.';
+    if (closing) return 'Il server si sta riavviando. Riprova tra poco.';
+    if (gitOperations.has(chatId)) return 'Operazione Git in corso. Attendi il completamento.';
+    if (active.has(chatId)) return 'Attendi la fine del task prima di cambiare branch.';
+    if (store.queue(chatId).length)
+      return 'Ci sono messaggi in coda: inviali o rimuovili prima di cambiare branch.';
+    return null;
+  }
+  app.get('/api/conversations/:id/git', async (req, res) => {
+    const chat = getChat(String(req.params.id));
+    const view = await git.view(chat);
+    res.json({ ...view, blocked: gitBlocked(chat.id) });
+  });
+  app.post('/api/conversations/:id/git', async (req, res) => {
+    const chat = getChat(String(req.params.id));
+    const input = z
+      .discriminatedUnion('action', [
+        z.object({ action: z.literal('prepare') }),
+        z.object({ action: z.literal('fetch') }),
+        z.object({ action: z.literal('switch'), branch: z.string().min(1).max(300) }),
+        z.object({
+          action: z.literal('create'),
+          name: z.string().trim().min(1).max(160),
+          base: z.string().min(1).max(300),
+        }),
+      ])
+      .parse(req.body);
+    const blocked = gitBlocked(chat.id);
+    if (blocked) throw new GitError(409, blocked);
+    const controller = new AbortController();
+    const handle = { controller, promise: Promise.resolve() };
+    gitOperations.set(chat.id, handle);
+    publish({ type: 'changed', conversationId: chat.id });
+    handle.promise = (async () => {
+      const signal = controller.signal;
+      if (input.action === 'prepare') {
+        if (!chat.repo) throw new GitError(400, 'Questa chat non è collegata a una repository.');
+        if (!chat.workspace) {
+          if (config.demo) {
+            chat.workspace = path.join(config.dataDir, 'workspaces', chat.id);
+            await mkdir(chat.workspace, { recursive: true });
+            await git.command(chat.workspace, ['init', '-b', 'main'], signal);
+            await git.command(
+              chat.workspace,
+              [
+                '-c',
+                'user.name=Demo',
+                '-c',
+                'user.email=demo@example.invalid',
+                'commit',
+                '--allow-empty',
+                '-m',
+                'Demo repository',
+              ],
+              signal,
+            );
+            await git.command(
+              chat.workspace,
+              ['switch', '-c', `agent/${chat.id.slice(0, 8)}`],
+              signal,
+            );
+          } else {
+            try {
+              chat.workspace = await prepareWorkspace(config, chat, signal);
+            } catch {
+              await rm(path.join(config.dataDir, 'workspaces', chat.id), {
+                recursive: true,
+                force: true,
+              });
+              throw new GitError(
+                503,
+                'Non riesco a preparare la repository. Controlla la connessione e l’accesso GitHub, poi riprova.',
+              );
+            }
+          }
+          store.db
+            .prepare('UPDATE conversations SET workspace=? WHERE id=?')
+            .run(chat.workspace, chat.id);
+        }
+      } else if (input.action === 'fetch') {
+        const view = await git.view(chat, signal);
+        if (!view.ready) throw new GitError(409, 'Prepara prima il repository.');
+        if (config.demo) return;
+        await git.command(chat.workspace!, ['fetch', '--prune', 'origin'], signal);
+      } else {
+        await git.change(
+          chat,
+          input.action === 'create'
+            ? { name: input.name, base: input.base }
+            : { branch: input.branch },
+          signal,
+        );
+        // Preserve chat history; the next turn starts a fresh CLI session and re-reads the files.
+        store.db.prepare('UPDATE conversations SET session_id=NULL WHERE id=?').run(chat.id);
+        store.touch(chat.id);
+      }
+    })();
+    try {
+      await handle.promise;
+    } finally {
+      gitOperations.delete(chat.id);
+      publish({ type: 'changed', conversationId: chat.id });
+      drainQueue();
+    }
+    res.json({ ...(await git.view(getChat(chat.id))), blocked: gitBlocked(chat.id) });
+  });
   app.get('/api/conversations', (_req, res) => res.json(store.list()));
   app.get('/api/github', async (_req, res) => res.json(await github.info()));
   app.post('/api/conversations', (req, res) => {
@@ -819,13 +930,18 @@ export function createApp(config: Config) {
   });
   app.post('/api/conversations/:id/delete', async (req, res) => {
     const chat = getChat(String(req.params.id));
-    if (active.has(chat.id))
+    if (active.has(chat.id) || gitOperations.has(chat.id) || deletingChats.has(chat.id))
       throw new HttpError(
         409,
         'Attendi la fine del task o interrompilo prima di eliminare la chat.',
       );
-    await browser.remove(chat.id);
-    store.remove(chat.id);
+    deletingChats.add(chat.id);
+    try {
+      await browser.remove(chat.id);
+      store.remove(chat.id);
+    } finally {
+      deletingChats.delete(chat.id);
+    }
     for (const [id, p] of presence) if (p.conversationId === chat.id) presence.delete(id);
     publish({ type: 'deleted', conversationId: chat.id });
     res.json({ ok: true });
@@ -896,6 +1012,11 @@ export function createApp(config: Config) {
       const images = [...(await prepareImages(imageFiles)), ...prepareDocuments(documentFiles)];
       // Image decoding yields: recheck state before reserving a run.
       chat = getChat(chat.id);
+      if (gitOperations.has(chat.id) || deletingChats.has(chat.id))
+        throw new GitError(
+          409,
+          'Operazione Git in corso. Riprova al termine; la bozza è conservata.',
+        );
       if (audioFile && (active.has(chat.id) || store.queue(chat.id).length))
         throw new HttpError(
           409,
@@ -1045,7 +1166,8 @@ export function createApp(config: Config) {
       });
     res
       .status(
-        err instanceof FileError ||
+        err instanceof GitError ||
+          err instanceof FileError ||
           err instanceof ImageError ||
           err instanceof HttpError ||
           err instanceof McpError ||
@@ -1057,6 +1179,7 @@ export function createApp(config: Config) {
       )
       .json({
         error:
+          err instanceof GitError ||
           err instanceof FileError ||
           err instanceof ImageError ||
           err instanceof HttpError ||
@@ -1079,8 +1202,11 @@ export function createApp(config: Config) {
     terminal,
     async close() {
       closing = true;
-      for (const handle of active.values()) handle.controller.abort();
-      await Promise.allSettled([...active.values()].map((h) => h.promise));
+      for (const handle of [...active.values(), ...gitOperations.values()])
+        handle.controller.abort();
+      await Promise.allSettled(
+        [...active.values(), ...gitOperations.values()].map((h) => h.promise),
+      );
       mcp.close();
       await browser.close();
       await terminal.close();
