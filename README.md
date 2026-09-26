@@ -152,7 +152,7 @@ C’è una sessione terminale condivisa: chiudere il pannello o perdere la conne
 
 ## Deploy Railway
 
-Repository privata: `francescocirulli/personal-agent`. Il servizio usa il Dockerfile e `railway.json`, una singola replica sempre attiva e un volume montato in `/data`. L’endpoint `/healthz` è riservato al controllo di disponibilità e non espone dati applicativi. Le API mantengono autenticazione e controllo dell’origine.
+Repository privata: `francescocirulli/personal-agent`. Il servizio usa il Dockerfile, una singola replica sempre attiva e un volume montato in `/data`. Nelle impostazioni Railway: Dockerfile `Dockerfile`, healthcheck `/healthz` con timeout 120 secondi, restart `ON_FAILURE` con cinque tentativi, regione Europa e sleep disabilitato. Non si usa il vecchio formato Config as Code, deprecato da Railway. L’endpoint `/healthz` controlla la disponibilità senza esporre dati applicativi. Le API mantengono autenticazione e controllo dell’origine.
 
 Impostare `HOST=0.0.0.0`, `PORT=4310`, `DATA_DIR=/data`, `HOME=/data/home`, `AGENT_CODEX_HOME=/data/home/.codex`, `AGENT_UNRESTRICTED=true`, `DEMO_MODE=false`, `APP_ORIGIN` sul dominio HTTPS effettivo e una `APP_PASSWORD` lunga. Le chiavi audio, Claude e VAPID vanno nelle variabili private del servizio, mai in Git. Per il volume Railway usare `RAILWAY_RUN_UID=0`: l’entrypoint sistema i permessi dei file appartenenti a root e passa subito all’utente `node` prima di avviare app e agenti.
 
