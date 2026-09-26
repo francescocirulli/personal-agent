@@ -48,6 +48,47 @@ export interface BrowserView {
   screenshots: BrowserShot[];
   dialog?: { type: string; message: string };
 }
+export const browserInputSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('navigate'), url: z.string().max(12000) }),
+  z.object({
+    type: z.literal('click'),
+    x: z.number().min(0).max(1280),
+    y: z.number().min(0).max(800),
+    tab: z.string().uuid(),
+  }),
+  z.object({ type: z.literal('text'), text: z.string().max(8192), tab: z.string().uuid() }),
+  z.object({
+    type: z.literal('key'),
+    key: z.enum([
+      'Enter',
+      'Tab',
+      'Shift+Tab',
+      'Backspace',
+      'Escape',
+      'ArrowUp',
+      'ArrowDown',
+      'ArrowLeft',
+      'ArrowRight',
+      'ControlOrMeta+A',
+      'Space',
+    ]),
+    tab: z.string().uuid(),
+  }),
+  z.object({
+    type: z.literal('scroll'),
+    delta: z.number().int().min(-1600).max(1600),
+    tab: z.string().uuid(),
+  }),
+  z.object({ type: z.literal('back') }),
+  z.object({ type: z.literal('tab'), id: z.string().uuid() }),
+  z.object({
+    type: z.literal('dialog'),
+    accept: z.boolean(),
+    text: z.string().max(2000).optional(),
+  }),
+]);
+export type BrowserInput = z.infer<typeof browserInputSchema>;
+
 interface Session {
   chatId: string;
   context: BrowserContext;
@@ -425,6 +466,39 @@ export class BrowserService {
       }
       this.changed(chatId);
     }
+  }
+  async interact(chatId: string, raw: unknown) {
+    const input = browserInputSchema.parse(raw);
+    // Validate navigation before allocating a browser context.
+    const url = input.type === 'navigate' ? this.safeUrl(input.url) : '';
+    await this.action(
+      chatId,
+      new AbortController().signal,
+      'Interazione dal browser dell’app.',
+      async (s) => {
+        if ('tab' in input && s.pages.get(input.tab) !== s.page)
+          throw new BrowserError(409, 'La scheda è cambiata. Attendi la nuova immagine.');
+        if (input.type === 'navigate') await s.page.goto(url, { waitUntil: 'domcontentloaded' });
+        if (input.type === 'click') await s.page.mouse.click(input.x, input.y);
+        if (input.type === 'text') await s.page.keyboard.insertText(input.text);
+        if (input.type === 'key') await s.page.keyboard.press(input.key);
+        if (input.type === 'scroll') await s.page.mouse.wheel(0, input.delta);
+        if (input.type === 'back') await s.page.goBack({ waitUntil: 'domcontentloaded' });
+        if (input.type === 'tab') {
+          const page = s.pages.get(input.id);
+          if (!page) throw new BrowserError(404, 'Scheda non disponibile.');
+          s.page = page;
+        }
+        if (input.type === 'dialog' && s.dialog) {
+          const dialog = s.dialog;
+          s.dialog = undefined;
+          if (input.accept) await dialog.accept(input.text);
+          else await dialog.dismiss();
+        }
+        s.title = await s.page.title().catch(() => '');
+      },
+    );
+    return this.view(chatId);
   }
   view(chatId: string): BrowserView {
     const s = this.sessions.get(chatId);

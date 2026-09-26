@@ -204,3 +204,109 @@ test(
     }
   },
 );
+
+test(
+  'terminal browser: real CLI opener, manual login with localhost callback, isolation and authorization',
+  { timeout: 60000 },
+  async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'pa-terminal-browser-'));
+    let callback = false;
+    const site = createServer((req, res) => {
+      res.setHeader('Content-Type', 'text/html');
+      if (req.url?.startsWith('/callback')) {
+        callback = true;
+        res.end('<h1>Accesso completato</h1>');
+      } else
+        res.end(
+          '<form action="/callback"><label>Codice<input name="code" autofocus></label><button>Accedi</button></form>',
+        );
+    });
+    await new Promise<void>((r) => site.listen(0, '127.0.0.1', r));
+    const url = `http://127.0.0.1:${(site.address() as any).port}/`;
+    const config = {
+      ...readConfig(),
+      dataDir: dir,
+      demo: false,
+      unrestricted: true,
+      password: 'terminal-browser-test-password',
+      vapidPublic: '',
+      vapidPrivate: '',
+    };
+    const runtime = createApp(config),
+      server = runtime.app.listen(0, '127.0.0.1');
+    await new Promise<void>((r) => server.once('listening', r));
+    config.port = (server.address() as any).port;
+    config.origin = `http://127.0.0.1:${config.port}`;
+    let cookie = '';
+    const request = (p: string, body?: unknown) =>
+      fetch(config.origin + '/api' + p, {
+        method: body === undefined ? 'GET' : 'POST',
+        headers: { Cookie: cookie, 'Content-Type': 'application/json' },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+    try {
+      for (const p of ['/terminal/browser', '/terminal/browser/frame'])
+        assert.equal((await request(p)).status, 401);
+      assert.equal(
+        (await request('/terminal/browser/input', { type: 'navigate', url })).status,
+        401,
+      );
+      assert.equal((await request('/terminal/browser/open', { url })).status, 401);
+      cookie = (await request('/login', { password: config.password })).headers
+        .get('set-cookie')!
+        .split(';')[0];
+      const started = (await (
+        await request('/terminal/start', { cols: 80, rows: 24 })
+      ).json()) as any;
+      // This invokes the actual executable injected into the shell, as a CLI would.
+      await request(`/terminal/${started.id}/input`, { data: `xdg-open '${url}'\r` });
+      for (let i = 0; i < 200 && !runtime.terminal.view().browserRequestId; i++) await delay(100);
+      assert.equal(runtime.terminal.view().browserRequestId, 1);
+      const view = (await (await request('/terminal/browser')).json()) as any;
+      assert.equal(view.url, url);
+      const tab = view.tabs[0].id;
+      assert.equal((await request('/terminal/browser/frame')).status, 200);
+      assert.equal(
+        (await request('/terminal/browser/input', { type: 'text', text: 'private-code', tab }))
+          .status,
+        200,
+      );
+      assert.equal(
+        (await request('/terminal/browser/input', { type: 'key', key: 'Enter', tab })).status,
+        200,
+      );
+      for (let i = 0; i < 50 && !callback; i++) await delay(50);
+      assert.ok(callback, 'the browser can complete a real loopback callback');
+      assert.equal(
+        (await request('/terminal/browser/input', { type: 'navigate', url: config.origin })).status,
+        400,
+      );
+      assert.equal(
+        (await request('/terminal/browser/input', { type: 'navigate', url: 'file:///etc/passwd' }))
+          .status,
+        400,
+      );
+      assert.equal(
+        (await request('/terminal/browser/input', { type: 'click', x: -1, y: 0, tab })).status,
+        400,
+      );
+      const chat = runtime.store.create('codex', null, 'Isolated');
+      assert.equal(runtime.browser.view(chat.id).tabs.length, 0);
+      assert.equal(
+        runtime.store.db
+          .prepare(
+            "SELECT count(*) AS n FROM events WHERE data LIKE '%private-code%' OR data LIKE '%terminal%'",
+          )
+          .get()!.n,
+        0,
+      );
+      await request(`/terminal/${started.id}/stop`, {});
+      assert.equal((await request('/terminal/browser/open', { url })).status, 401);
+    } finally {
+      await runtime.close();
+      await new Promise<void>((r) => server.close(() => r()));
+      await new Promise<void>((r) => site.close(() => r()));
+      await rm(dir, { recursive: true, force: true });
+    }
+  },
+);

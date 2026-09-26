@@ -11,6 +11,7 @@ export interface Conversation {
   title: string;
   agent: Agent;
   repo: string | null;
+  model: string | null;
   session_id: string | null;
   workspace: string | null;
   created_at: number;
@@ -64,6 +65,13 @@ export class Store {
         .some((c) => c.name === 'title_custom')
     )
       this.db.exec('ALTER TABLE conversations ADD COLUMN title_custom INTEGER NOT NULL DEFAULT 0');
+    if (
+      !this.db
+        .prepare('PRAGMA table_info(conversations)')
+        .all()
+        .some((c) => c.name === 'model')
+    )
+      this.db.exec('ALTER TABLE conversations ADD COLUMN model TEXT');
     this.db
       .prepare(
         "UPDATE runs SET status='interrupted',error='Il server è stato riavviato. Il lavoro non viene rieseguito automaticamente.',updated_at=? WHERE status IN ('running','transcribing')",

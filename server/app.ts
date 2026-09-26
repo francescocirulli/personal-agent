@@ -1,3 +1,4 @@
+import { agentModels, modelSchema } from './agent-models';
 import express, { type Request, type Response, type NextFunction } from 'express';
 import multer from 'multer';
 import { randomUUID, randomBytes, createHash, timingSafeEqual } from 'node:crypto';
@@ -71,11 +72,13 @@ export function createApp(config: Config) {
     events.emit('event', event);
   }
   const mcp = new McpService(config, () => publish({ type: 'mcp_changed' }));
-  const terminal = new TerminalService(config);
-  const skills = new SkillService(store, config.dataDir, () => publish({ type: 'skills_changed' }));
-  const browser = new BrowserService(config, (conversationId) =>
-    publish({ type: 'browser_changed', conversationId }),
+  const terminal = new TerminalService(config, (url) =>
+    browser.interact('terminal', { type: 'navigate', url }),
   );
+  const skills = new SkillService(store, config.dataDir, () => publish({ type: 'skills_changed' }));
+  const browser = new BrowserService(config, (conversationId) => {
+    if (conversationId !== 'terminal') publish({ type: 'browser_changed', conversationId });
+  });
   function getChat(id: string) {
     const c = store.conversation(id);
     if (!c) throw new HttpError(404, 'Chat non trovata.');
@@ -344,6 +347,13 @@ export function createApp(config: Config) {
     await mcp.gateway(req, res);
   });
   app.all('/api/browser/mcp', async (req, res) => browser.handle(req, res));
+  app.post('/api/terminal/browser/open', async (req, res) => {
+    await terminal.browserRequest(
+      req.headers.authorization,
+      z.string().max(12000).parse(req.body.url),
+    );
+    res.json({ ok: true });
+  });
   app.use('/api', (req, res, next) => {
     if (!session(req)) return res.status(401).json({ error: 'Accedi per continuare.' });
     next();
@@ -357,6 +367,25 @@ export function createApp(config: Config) {
       unrestricted: config.unrestricted,
     }),
   );
+  function terminalBrowserEnabled() {
+    if (!terminal.view().enabled)
+      throw new HttpError(
+        403,
+        'Browser terminale disponibile solo nell’ambiente reale con autonomia abilitata.',
+      );
+  }
+  app.get('/api/terminal/browser', (_req, res) => {
+    terminalBrowserEnabled();
+    res.json(browser.view('terminal'));
+  });
+  app.post('/api/terminal/browser/input', async (req, res) => {
+    terminalBrowserEnabled();
+    res.json(await browser.interact('terminal', req.body));
+  });
+  app.get('/api/terminal/browser/frame', async (_req, res) => {
+    terminalBrowserEnabled();
+    res.type('image/jpeg').send(await browser.frame('terminal'));
+  });
   const terminalSize = z.object({
     cols: z.number().int().min(20).max(300),
     rows: z.number().int().min(5).max(100),
@@ -543,6 +572,16 @@ export function createApp(config: Config) {
       runs: store.runs(chat.id),
       activity: store.activities(chat.id),
     });
+  });
+  app.get('/api/conversations/:id/models', async (req, res) => {
+    res.json(await agentModels(getChat(String(req.params.id)).agent));
+  });
+  app.post('/api/conversations/:id/model', (req, res) => {
+    const chat = getChat(String(req.params.id));
+    const model = modelSchema.parse(req.body.model);
+    store.db.prepare('UPDATE conversations SET model=? WHERE id=?').run(model, chat.id);
+    publish({ type: 'changed', conversationId: chat.id });
+    res.json(store.conversation(chat.id));
   });
   app.post('/api/conversations/:id/rename', (req, res) => {
     const chat = getChat(String(req.params.id));

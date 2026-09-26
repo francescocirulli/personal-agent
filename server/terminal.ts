@@ -1,6 +1,6 @@
 import * as pty from 'node-pty';
-import { randomUUID } from 'node:crypto';
-import { mkdir, stat } from 'node:fs/promises';
+import { randomUUID, randomBytes, timingSafeEqual } from 'node:crypto';
+import { mkdir, stat, copyFile, chmod } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Response } from 'express';
@@ -16,6 +16,7 @@ export interface TerminalView {
   home: string;
   toolsPrefix: string;
   exitCode?: number;
+  browserRequestId?: number;
 }
 interface TerminalEvent {
   seq: number;
@@ -46,10 +47,15 @@ export class TerminalError extends Error {
 }
 export class TerminalService {
   private current?: Session;
+  private browserToken = '';
+  private browserRequestId = 0;
   private starting = false;
   private closing = false;
   readonly home: string;
-  constructor(private config: Config) {
+  constructor(
+    private config: Config,
+    private openBrowser?: (url: string) => Promise<unknown>,
+  ) {
     this.home = path.join(config.dataDir, 'home');
   }
   view(): TerminalView {
@@ -62,6 +68,7 @@ export class TerminalService {
       home: this.home,
       toolsPrefix: path.join(this.config.dataDir, 'tools'),
       exitCode: s?.exitCode,
+      browserRequestId: this.browserRequestId,
     };
   }
   private session(id: string) {
@@ -89,6 +96,16 @@ export class TerminalService {
           'Cartella non disponibile. Esegui prima un task nella chat per preparare la repository.',
         );
       if (this.current) for (const stream of this.current.streams) stream.end();
+      const browserBin = path.join(this.config.dataDir, 'terminal-bin');
+      await mkdir(browserBin, { recursive: true, mode: 0o700 });
+      for (const name of ['pa-browser', 'xdg-open', 'sensible-browser']) {
+        await copyFile(
+          fileURLToPath(new URL('./terminal-browser.mjs', import.meta.url)),
+          path.join(browserBin, name),
+        );
+        await chmod(path.join(browserBin, name), 0o700);
+      }
+      this.browserToken = randomBytes(32).toString('hex');
       const env = {
         ...agentEnvironment(this.config),
         HOME: this.home,
@@ -98,6 +115,12 @@ export class TerminalService {
         SHELL: '/bin/bash',
         LANG: 'C.UTF-8',
       };
+      Object.assign(env, {
+        PATH: browserBin + path.delimiter + env.PATH,
+        BROWSER: path.join(browserBin, 'pa-browser'),
+        PA_TERMINAL_BROWSER_URL: `http://127.0.0.1:${this.config.port}/api/terminal/browser/open`,
+        PA_TERMINAL_BROWSER_TOKEN: this.browserToken,
+      });
       delete (env as NodeJS.ProcessEnv).NO_COLOR;
       delete (env as NodeJS.ProcessEnv).GIT_TERMINAL_PROMPT;
       if (this.closing) throw new TerminalError(409, 'Il server si sta chiudendo.');
@@ -151,6 +174,20 @@ export class TerminalService {
     } finally {
       this.starting = false;
     }
+  }
+  async browserRequest(authorization: string | undefined, url: string) {
+    const provided = Buffer.from(authorization || '');
+    const expected = Buffer.from(`Bearer ${this.browserToken}`);
+    if (
+      !this.browserToken ||
+      !this.current?.running ||
+      provided.length !== expected.length ||
+      !timingSafeEqual(provided, expected)
+    )
+      throw new TerminalError(401, 'Sessione terminale non autorizzata.');
+    if (!this.openBrowser) throw new TerminalError(503, 'Browser non disponibile.');
+    await this.openBrowser(url);
+    this.browserRequestId++;
   }
   private send(res: Response, event: TerminalEvent) {
     if (res.writableEnded || res.destroyed) return;

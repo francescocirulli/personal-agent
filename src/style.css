@@ -2295,3 +2295,101 @@ button svg {
     white-space: nowrap;
   }
 }
+
+.model-picker {
+  padding: 0 24px 14px;
+  display: grid;
+  gap: 6px;
+}
+.model-picker label {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.model-picker select {
+  max-width: min(100%, 300px);
+  min-width: 0;
+}
+.model-picker small {
+  color: var(--muted);
+}
+.model-picker form,
+.browser-navigation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.model-picker input,
+.browser-navigation input {
+  flex: 1;
+  min-width: 120px;
+}
+.terminal-browser-backdrop {
+  z-index: 160;
+}
+.terminal-browser-modal {
+  width: min(1100px, 100%);
+}
+.terminal-browser-modal select {
+  max-width: 100%;
+}
+.interactive-browser-screen {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  overflow: hidden;
+  cursor: crosshair;
+  margin: 12px 0;
+}
+.interactive-browser-screen img {
+  width: 100%;
+  display: block;
+}
+.interactive-browser-screen:disabled {
+  opacity: 0.8;
+}
+.terminal-browser-modal {
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+}
+.interactive-browser-viewport {
+  overflow: auto;
+  max-height: 60dvh;
+}
+.interactive-browser-viewport.zoomed .interactive-browser-screen {
+  width: 1280px;
+  max-width: none;
+}
+.terminal-browser-modal button,
+.model-picker button {
+  min-height: 44px;
+  padding: 8px 12px;
+}
+.terminal-browser-modal input:not([type='checkbox']),
+.terminal-browser-modal select,
+.model-picker input,
+.model-picker select {
+  padding: 10px;
+  background: #303030;
+  color: #ececec;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 16px;
+}
+.terminal-browser-modal .interactive-browser-screen {
+  padding: 0;
+}
+@media (max-width: 600px) {
+  .terminal-browser-backdrop {
+    padding: 6px;
+  }
+  .terminal-browser-modal {
+    padding: 24px 12px;
+    max-height: calc(100dvh - 12px);
+  }
+  .model-picker {
+    padding: 0 16px 12px;
+  }
+}

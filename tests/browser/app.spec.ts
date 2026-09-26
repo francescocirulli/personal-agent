@@ -766,3 +766,104 @@ test('terminal settings: mobile input, controls, reconnect and explicit stop', a
   await expect(dialog.getByText('Sessione terminata', { exact: false }).first()).toBeVisible();
   expect(stops).toBe(1);
 });
+
+test('model picker in existing chats persists selection and accepts custom IDs for both agents', async ({
+  page,
+  request,
+}) => {
+  for (const agent of ['claude', 'codex']) {
+    const chat = await (
+      await request.post('/api/conversations', { data: { agent, title: 'Scelta modello' } })
+    ).json();
+    try {
+      await page.goto(`/?chat=${chat.id}`);
+      await page.getByLabel('Modello della chat').selectOption('__custom');
+      await page.getByLabel('ID modello', { exact: true }).fill('test-model');
+      await page.getByRole('button', { name: 'Salva modello' }).click();
+      await expect(page.getByLabel('Modello della chat')).toHaveValue('test-model');
+      await page.reload();
+      await expect(page.getByLabel('Modello della chat')).toHaveValue('test-model');
+      expect((await (await request.get(`/api/conversations/${chat.id}`)).json()).model).toBe(
+        'test-model',
+      );
+      await page.getByLabel('Modello della chat').selectOption('');
+      await expect(page.getByLabel('Modello della chat')).toHaveValue('');
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+    } finally {
+      await request.post(`/api/conversations/${chat.id}/delete`, { data: {} });
+    }
+  }
+});
+
+test('terminal browser opens from CLI request and supports touch, private text, tabs and closing without stopping shell', async ({
+  page,
+}) => {
+  const tab = '96bdfd69-1e8c-49fb-8396-92227cf52df7';
+  const inputs: any[] = [];
+  let browserRequestId = 0;
+  const state = {
+    status: 'ready',
+    action: 'Pronto',
+    url: 'https://example.test/login',
+    title: 'Login',
+    updatedAt: 1,
+    tabs: [{ id: tab, url: 'https://example.test/login', selected: true }],
+    screenshots: [],
+  };
+  await page.route('**/api/terminal', (r) =>
+    r.fulfill({
+      json: {
+        enabled: true,
+        running: false,
+        id: null,
+        home: '/data/home',
+        cwd: '/data/home',
+        toolsPrefix: '/data/tools',
+        browserRequestId,
+      },
+    }),
+  );
+  await page.route('**/api/terminal/browser', (r) => r.fulfill({ json: state }));
+  await page.route('**/api/terminal/browser/frame', (r) =>
+    r.fulfill({
+      contentType: 'image/svg+xml',
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="800"><rect width="1280" height="800" fill="white"/><text x="100" y="100">Login</text></svg>',
+    }),
+  );
+  await page.route('**/api/terminal/browser/input', (r) => {
+    inputs.push(r.request().postDataJSON());
+    return r.fulfill({ json: state });
+  });
+  await page.goto('/?settings=terminal');
+  await expect(
+    page.getByRole('button', { name: 'Browser del terminale', exact: true }),
+  ).toBeVisible();
+  browserRequestId++;
+  const dialog = page.getByRole('dialog', { name: 'Browser del terminale', exact: true });
+  await expect(dialog).toBeVisible();
+  const screen = dialog.getByRole('button', { name: 'Pagina interattiva del browser' });
+  await expect(screen).toBeEnabled();
+  await screen.click();
+  await expect
+    .poll(() => inputs.some((i) => i.type === 'click' && i.x >= 0 && i.x <= 1280 && i.tab === tab))
+    .toBe(true);
+  await dialog.getByLabel('Testo per il campo selezionato').fill('private fixture');
+  await expect(dialog.getByLabel('Testo per il campo selezionato')).toHaveAttribute(
+    'type',
+    'password',
+  );
+  await dialog.getByRole('button', { name: 'Invia testo al browser' }).click();
+  await expect
+    .poll(() => inputs.some((i) => i.type === 'text' && i.text === 'private fixture'))
+    .toBe(true);
+  await expect(dialog.getByLabel('Testo per il campo selezionato')).toHaveValue('');
+  await dialog.getByRole('button', { name: 'Enter', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Scorri giù' }).click();
+  await dialog.getByRole('button', { name: 'Ingrandisci pagina' }).click();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await dialog.getByRole('button', { name: 'Chiudi browser del terminale' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole('dialog', { name: 'Terminale', exact: true })).toBeVisible();
+});

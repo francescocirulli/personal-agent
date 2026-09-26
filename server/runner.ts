@@ -60,6 +60,7 @@ export function commandFor(
       bin: config.claudeBin,
       args: [
         '-p',
+        ...(chat.model ? ['--model', chat.model] : []),
         '--output-format',
         'stream-json',
         '--verbose',
@@ -75,6 +76,7 @@ export function commandFor(
       ],
     };
   const common = [
+    ...(chat.model ? ['--model', chat.model] : []),
     '--json',
     '--skip-git-repo-check',
     ...codexMcp,
@@ -166,7 +168,7 @@ export async function runProcess(
       else if (code !== 0)
         reject(
           new Error(
-            `${path.basename(bin)} è terminato con codice ${code}. Verifica il login della subscription e la configurazione della CLI.`,
+            `${path.basename(bin)} è terminato con codice ${code}. Verifica il login della subscription, il modello selezionato e la configurazione della CLI.`,
           ),
         );
       else resolve();

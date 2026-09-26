@@ -1,3 +1,4 @@
+import { TerminalBrowser } from './TerminalBrowser';
 import { useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -16,6 +17,9 @@ export default function TerminalSettings({
   onClose(): void;
   onTab(tab: 'voice' | 'mcp' | 'skills'): void;
 }) {
+  const [browserUrl, setBrowserUrl] = useState<string | null>(null);
+  const seenBrowserRequest = useRef(0);
+  const seenBrowserSession = useRef<string | null>(null);
   const [view, setView] = useState<TerminalView>();
   const [workspace, setWorkspace] = useState('');
   const [pending, setPending] = useState(false),
@@ -43,6 +47,30 @@ export default function TerminalSettings({
     };
   }, []);
   useEffect(() => {
+    if (!view?.enabled) return;
+    let disposed = false;
+    const timer = setInterval(() => {
+      void api<TerminalView>('/terminal')
+        .then((current) => {
+          if (disposed) return;
+          if (seenBrowserSession.current !== current.id) {
+            seenBrowserSession.current = current.id;
+            seenBrowserRequest.current = 0;
+          }
+          const requestId = current.browserRequestId || 0;
+          if (requestId > seenBrowserRequest.current) {
+            seenBrowserRequest.current = requestId;
+            setBrowserUrl('');
+          }
+        })
+        .catch(() => {});
+    }, 1500);
+    return () => {
+      disposed = true;
+      clearInterval(timer);
+    };
+  }, [view?.enabled]);
+  useEffect(() => {
     const id = view?.id;
     if (!id || !screen.current) return;
     let disposed = false,
@@ -68,7 +96,7 @@ export default function TerminalSettings({
     term.loadAddon(fit);
     term.loadAddon(
       new WebLinksAddon((_event, url) => {
-        if (/^https?:\/\//i.test(url)) window.open(url, '_blank', 'noopener,noreferrer');
+        if (/^https?:\/\//i.test(url)) setBrowserUrl(url);
       }),
     );
     term.open(screen.current);
@@ -194,6 +222,14 @@ export default function TerminalSettings({
           <X size={20} />
         </button>
         <h2 id="terminal-heading">Terminale</h2>
+        {view?.enabled && (
+          <button className="soft-button" onClick={() => setBrowserUrl('')}>
+            Browser del terminale
+          </button>
+        )}
+        {browserUrl !== null && (
+          <TerminalBrowser initialUrl={browserUrl} onClose={() => setBrowserUrl(null)} />
+        )}
         <nav className="settings-tabs" aria-label="Sezioni impostazioni">
           <button onClick={() => onTab('voice')}>Voce</button>
           <button onClick={() => onTab('mcp')}>MCP</button>
@@ -399,7 +435,12 @@ export default function TerminalSettings({
               <p>Per esempio, Railway:</p>
               <code>npm install -g @railway/cli</code>
               <code>railway --version</code>
-              <code>railway login --browserless</code>
+              <code>railway login</code>
+              <p>
+                I link si aprono nel browser integrato. Se la CLI non lo apre automaticamente, tocca
+                il link nell’output o incollalo in Browser del terminale. Per il login dal browser
+                del telefono usa <code>railway login --browserless</code>.
+              </p>
               <p>
                 Le installazioni npm globali sono salvate in <code>{view.toolsPrefix}</code> e
                 disponibili anche agli agenti. I file nella home e nei progetti persistono. I

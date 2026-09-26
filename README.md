@@ -49,6 +49,7 @@ Le chiavi non entrano nell'immagine né nel frontend. `.env` e `.data` sono escl
 - Un run attivo per chat; fino a tre chat lavorano contemporaneamente (configurabile). Quando la capacità è esaurita, il nuovo invio viene rifiutato esplicitamente, senza coda nascosta.
 - Clone indipendente per chat con branch iniziale dedicato; directory indipendente per le chat libere. Le istruzioni chiedono alle CLI di rispettare `CLAUDE.md` e `AGENTS.md` applicabili.
 - Session ID delle CLI persistiti e riutilizzati per i turni successivi.
+- **Modello della chat**: selettore dentro ogni chat Claude Code o Codex, con scelta persistente e ID personalizzato. Vale dal messaggio successivo, anche sui resume, senza interrompere il task attivo. Codex legge i suggerimenti dalla cache locale della CLI; Claude propone gli alias `opus`, `sonnet`, `haiku`. La disponibilità dipende dalla subscription. “Predefinito CLI / sessione” omette l’override: una sessione ripresa può mantenere il proprio modello precedente. Il pannello non modifica il modello audio o l’agente della chat.
 - SSE con eventi salvati, replay e ricaricamento dello stato; chiudere lo stream non cancella il task. Gli eventi recuperati non attivano audio retroattivo.
 - Arresto del gruppo di processi, con SIGKILL dopo il periodo di grazia. Dopo un riavvio un run incompleto viene marcato interrotto, senza riesecuzione automatica di effetti già compiuti.
 - Trascrizione dell'audio, parte parlata `<voce>`, cache TTS per testo/modello/voce, generazione su richiesta anche dei messaggi ricevuti in modalità testo.
@@ -106,7 +107,7 @@ Per ripetere solo la prova di ingresso audio: `SMOKE_AGENTS='' SMOKE_AUDIO_INPUT
 
 - Il rilevamento delle pause usa un VAD energetico adattivo: va tarato sul microfono dell'iPhone e in ambienti rumorosi. Non è ancora Silero. Durante lavoro e riproduzione il microfono non invia turni; niente interruzione parlata.
 - Uscire dalla schermata voce o portare l'app in background termina l'ascolto. I task proseguono; l'audio si riascolta dalla chat. La sospensione di Safari/PWA e la consegna push non si possono certificare con un browser desktop simulato.
-- Ambienti specifici dei repository, preview dei progetti, allegati, selezione del modello/effort e gestione completa dei file non hanno ancora un'interfaccia dedicata. La parità completa con le CLI desktop resta l'obiettivo, non un risultato già raggiunto.
+- Ambienti specifici dei repository, preview dei progetti, allegati, selezione dell’effort e gestione completa dei file non hanno ancora un'interfaccia dedicata. La parità completa con le CLI desktop resta l'obiettivo, non un risultato già raggiunto.
 - Il riassunto parlato è quello generato dall'agente; in assenza del tag si usa prosa ripulita dal markdown. Lo storico conserva la risposta testuale completa. Gli audio restano sul volume: manca ancora una politica automatica di pulizia.
 - Un solo backend per volume/database. Nessuna alta disponibilità o ripresa automatica dopo crash.
 
@@ -136,17 +137,19 @@ Le globali dell’app sono conservate nel database sul volume persistente. Ogni 
 
 ## Terminale dal telefono
 
-**Impostazioni → Terminale → Avvia terminale** apre una shell interattiva nell’ambiente degli agenti. La cartella iniziale può essere la home condivisa oppure il workspace di una chat già preparata. Sul telefono puoi usare il campo **Comando o risposta**, la tastiera diretta e i tasti Ctrl+C, Tab, frecce, Esc e Ctrl+D. I link HTTP(S) nell’output si aprono in una nuova scheda, utile per i login con codice o modalità browserless.
+**Impostazioni → Terminale → Avvia terminale** apre una shell interattiva nell’ambiente degli agenti. La cartella iniziale può essere la home condivisa oppure il workspace di una chat già preparata. Sul telefono puoi usare il campo **Comando o risposta**, la tastiera diretta e i tasti Ctrl+C, Tab, frecce, Esc e Ctrl+D. I link HTTP(S) nell’output aprono **Browser del terminale**, un Chromium interattivo dentro l’app. Il pulsante omonimo permette anche di incollare un indirizzo. Puoi toccare la pagina, ingrandirla, scorrere, cambiare scheda, scrivere nel campo selezionato e inviare i tasti Tab/Invio. Il testo da inviare è mascherato per impostazione iniziale; il sito può comunque mostrarlo nel proprio campo.
 
 Le CLI npm installate con `npm install -g nome-pacchetto` vengono salvate in `DATA_DIR/tools`, sul volume persistente, e diventano disponibili ai successivi task di Claude e Codex. Per esempio:
 
 ```sh
 npm install -g @railway/cli
 railway --version
-railway login --browserless
+railway login
 ```
 
-Anche `~/.local/bin`, `~/.railway/bin`, `~/.cargo/bin` e `~/.bun/bin` sono nel PATH degli agenti. Home, credenziali salvate dalle CLI e workspace persistono nel volume. Il terminale usa l’utente non root del container: pacchetti di sistema che richiedono root vanno aggiunti al Dockerfile. Il login nativo delle CLI è distinto dal pannello OAuth degli MCP; un servizio che richiede un callback localhost deve supportare una modalità adatta al server remoto.
+Anche `~/.local/bin`, `~/.railway/bin`, `~/.cargo/bin` e `~/.bun/bin` sono nel PATH degli agenti. Home, credenziali salvate dalle CLI e workspace persistono nel volume. Il terminale usa l’utente non root del container: pacchetti di sistema che richiedono root vanno aggiunti al Dockerfile. Il login nativo delle CLI è distinto dal pannello OAuth degli MCP. La shell configura `BROWSER`, `xdg-open` e `sensible-browser` per aprire la pagina nel browser integrato; la UI mostra il pannello quando arriva una nuova apertura. Le CLI che ignorano questi meccanismi possono richiedere di toccare o incollare il link. Il browser gira sullo stesso server della shell e raggiunge i callback HTTP su localhost, salvo le porte protette dell’app. I provider che bloccano Chromium automatizzato, richiedono passkey o un browser esterno possono richiedere `railway login --browserless` o l’equivalente del servizio; il link “Apri sul dispositivo” è utile per questi flussi, ma non sposta un callback localhost sul server.
+
+Il browser del terminale ha un profilo persistente condiviso, separato dalle chat, in `DATA_DIR/browser/terminal`. Cookie e local storage rimangono sul volume privato. Le interazioni e il testo dei campi non sono inseriti nella chat o negli eventi globali. L’apertura automatica usa un helper con credenziale valida soltanto per la shell attiva; la vista e i controlli richiedono la sessione autenticata dell’app. Chiudere il pannello non chiude il browser né la CLI. Il browser condivide limiti di risorse e timeout di inattività con i browser delle chat.
 
 C’è una sessione terminale condivisa: chiudere il pannello o perdere la connessione non ferma i comandi, e riaprendolo si recupera l’output recente. **Termina sessione** chiude esplicitamente la shell; un riavvio del server la termina e svuota l’output in memoria, conservando i file sul volume. Il terminale non è disponibile nella demo o con autonomia disabilitata. Comandi e output non vengono inseriti nelle chat; Bash conserva la sua normale cronologia nella home. “Nascondi il testo che scrivi” maschera il campo del telefono, non l’eventuale eco del programma o la cronologia della shell.
 

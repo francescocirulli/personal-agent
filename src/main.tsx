@@ -1,3 +1,4 @@
+import { ModelPicker } from './ModelPicker';
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import Markdown from 'react-markdown';
@@ -782,6 +783,7 @@ function App() {
                 {agentName(current.agent)}
               </span>
             </div>
+            <ModelPicker key={current.id} chat={current} onSaved={() => refresh(current.id)} />
             <div className="messages" aria-live="polite">
               {!current.messages.length && !working && (
                 <div className="empty-chat">
