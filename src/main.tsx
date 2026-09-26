@@ -1,3 +1,7 @@
+import { useDraft, deleteDraft } from './useDraft';
+import { FileCards } from './FileCards';
+import { QueuePanel } from './QueuePanel';
+import { SearchResults } from './SearchResults';
 import { ImageAttachments } from './ImageAttachments';
 import { ModelPicker } from './ModelPicker';
 import React, { useEffect, useRef, useState } from 'react';
@@ -63,13 +67,16 @@ function App() {
     [create, setCreate] = useState(false),
     [agent, setAgent] = useState<'claude' | 'codex'>('claude'),
     [repo, setRepo] = useState('');
-  const [images, setImages] = useState<File[]>([]);
+  const { draft, setDraft, images, setImages, draftReady, draftError } = useDraft(selected);
+  const [targetMessage, setTargetMessage] = useState<string | null>(
+    new URLSearchParams(location.search).get('message'),
+  );
+  const jumpPending = useRef(!!new URLSearchParams(location.search).get('message'));
   const [forking, setForking] = useState<string | null>(null);
   const [sendingNow, setSendingNow] = useState<string | null>(null);
   const sendPending = useRef(false);
   const imageInput = useRef<HTMLInputElement>(null);
-  const [draft, setDraft] = useState(''),
-    [search, setSearch] = useState(''),
+  const [search, setSearch] = useState(''),
     [error, setError] = useState(''),
     [notice, setNotice] = useState(''),
     [sending, setSending] = useState(false),
@@ -154,8 +161,7 @@ function App() {
     selection.current = null;
     setSelected(null);
     setDetail(undefined);
-    setDraft('');
-    setImages([]);
+    setTargetMessage(null);
     setPreview('');
     history.replaceState({}, '', '/');
   }
@@ -175,7 +181,10 @@ function App() {
         `/conversations/${chatMenu.id}/${chatAction}`,
         chatAction === 'rename' ? { title: chatTitle } : {},
       );
-      if (chatAction === 'delete' && selection.current === chatMenu.id) clearSelection();
+      if (chatAction === 'delete') {
+        await deleteDraft(chatMenu.id).catch(() => {});
+        if (selection.current === chatMenu.id) clearSelection();
+      }
       setChatMenu(null);
       await refresh();
     } catch (e) {
@@ -239,8 +248,8 @@ function App() {
     setSelected(id);
     setSidebar(false);
     setPreview('');
-    setDraft('');
-    setImages([]);
+    setTargetMessage(null);
+    jumpPending.current = false;
     setError('');
     history.replaceState({}, '', `/?chat=${id}`);
   }
@@ -363,8 +372,23 @@ function App() {
     };
   }, [selected, authenticated]);
   useEffect(() => {
-    bottom.current?.scrollIntoView({ behavior: 'smooth' });
+    if (!jumpPending.current) bottom.current?.scrollIntoView({ behavior: 'smooth' });
   }, [current?.messages.length, preview]);
+  useEffect(() => {
+    if (
+      !jumpPending.current ||
+      !targetMessage ||
+      !current?.messages.some((m) => m.id === targetMessage)
+    )
+      return;
+    const timer = setTimeout(() => {
+      document
+        .getElementById(`message-${targetMessage}`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      jumpPending.current = false;
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [targetMessage, current?.id, current?.messages.length]);
   useEffect(() => {
     const visibility = () => {
       if (document.hidden) stopVoice();
@@ -401,24 +425,28 @@ function App() {
   function addImages(files: File[]) {
     if (sendPending.current) return;
     if (
-      files.some(
-        (file) =>
-          !['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type) ||
-          file.size > 5 * 1024 * 1024,
-      )
+      files.some((file) => {
+        const isImage = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type);
+        return isImage
+          ? file.size > 5 * 1024 * 1024
+          : !/\.(pdf|docx|xlsx|csv|txt|md|json)$/i.test(file.name) || file.size > 20 * 1024 * 1024;
+      })
     ) {
-      setError('Usa PNG, JPEG, WebP o GIF, massimo 5 MB per immagine.');
+      setError(
+        'Usa immagini fino a 5 MB o PDF, DOCX, XLSX, CSV, TXT, Markdown e JSON fino a 20 MB.',
+      );
       return;
     }
     if (images.length + files.length > 4) {
-      setError('Puoi allegare al massimo 4 immagini.');
+      setError('Puoi allegare al massimo 4 file.');
       return;
     }
     setImages((previous) => [...previous, ...files]);
     setError('');
   }
   async function send(text?: string, blob?: Blob, chatId = selection.current) {
-    if (!chatId || sendPending.current || (blob && workingRef.current)) return;
+    if (!chatId || sendPending.current || (!blob && !draftReady) || (blob && workingRef.current))
+      return;
     sendPending.current = true;
     setSending(true);
     workingRef.current = true;
@@ -434,10 +462,15 @@ function App() {
       if (!blob && images.length) {
         const form = new FormData();
         form.append('text', text || '');
-        for (const image of images) form.append('images', image, image.name);
+        for (const image of images)
+          form.append(image.type.startsWith('image/') ? 'images' : 'files', image, image.name);
         body = form;
       }
       await api(`/conversations/${chatId}/turns`, body);
+      if (!blob)
+        await deleteDraft(chatId).catch(() =>
+          setError('Messaggio inviato, ma non è stato possibile eliminare la bozza locale.'),
+        );
       if (!blob && selection.current === chatId) {
         setDraft('');
         setImages([]);
@@ -643,7 +676,8 @@ function App() {
           <Search size={15} />
           <input
             aria-label="Cerca nelle chat"
-            placeholder="Cerca una conversazione"
+            placeholder="Cerca chat o messaggi"
+            maxLength={200}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -652,6 +686,17 @@ function App() {
           IL TUO SPAZIO <span>{chats.length}</span>
         </div>
         <nav className="chat-list" aria-label="Storico chat">
+          {!!search.trim() && (
+            <SearchResults
+              query={search}
+              onSelect={(chatId, messageId) => {
+                choose(chatId);
+                setTargetMessage(messageId);
+                jumpPending.current = true;
+                history.replaceState({}, '', `/?chat=${chatId}&message=${messageId}`);
+              }}
+            />
+          )}
           {[...chatGroups.entries()].map(([project, items]) => (
             <details className="chat-group" key={project} open>
               <summary title={project || 'Chat libere'}>
@@ -853,7 +898,11 @@ function App() {
                 </div>
               )}
               {current.messages.map((message) => (
-                <article className={`message ${message.role}`} key={message.id}>
+                <article
+                  id={`message-${message.id}`}
+                  className={`message ${message.role} ${targetMessage === message.id ? 'search-highlight' : ''}`}
+                  key={message.id}
+                >
                   <div className="message-author">
                     {message.role === 'user' ? (
                       <span className="mini-avatar">TU</span>
@@ -872,23 +921,29 @@ function App() {
                   </div>
                   {!!message.attachments?.length && (
                     <div className="image-attachments">
-                      {message.attachments.map((image) => (
-                        <a
-                          key={image.id}
-                          href={`/api/conversations/${current.id}/images/${image.id}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          aria-label={`Apri immagine ${image.name}`}
-                        >
-                          <img
-                            src={`/api/conversations/${current.id}/images/${image.id}`}
-                            alt={image.name}
-                            loading="lazy"
-                          />
-                        </a>
-                      ))}
+                      {message.attachments
+                        .filter((file) => file.mime === 'image/jpeg')
+                        .map((image) => (
+                          <a
+                            key={image.id}
+                            href={`/api/conversations/${current.id}/images/${image.id}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            aria-label={`Apri immagine ${image.name}`}
+                          >
+                            <img
+                              src={`/api/conversations/${current.id}/images/${image.id}`}
+                              alt={image.name}
+                              loading="lazy"
+                            />
+                          </a>
+                        ))}
                     </div>
                   )}
+                  <FileCards
+                    chatId={current.id}
+                    files={(message.attachments || []).filter((file) => file.mime !== 'image/jpeg')}
+                  />
                   <div className="message-body">
                     <Markdown
                       components={{
@@ -995,41 +1050,14 @@ function App() {
               <div ref={bottom} />
             </div>
             <div className="composer-area">
-              {!!current.queue?.length && (
-                <section className="message-queue" aria-label="Messaggi in coda">
-                  <p>In coda · {current.queue.length}</p>
-                  <ol>
-                    {current.queue.map((message) => (
-                      <li key={message.run_id}>
-                        <div>
-                          <span>{message.text}</span>
-                          {!!message.attachments?.length && (
-                            <small>{message.attachments.length} immagini allegate</small>
-                          )}
-                        </div>
-                        <button
-                          type="button"
-                          className="quiet"
-                          disabled={!!sendingNow}
-                          title="Interrompi il task attivo e invia questo messaggio"
-                          onClick={() => void sendNow(message.run_id)}
-                        >
-                          {sendingNow === message.run_id ? (
-                            <LoaderCircle size={14} className="spin" />
-                          ) : (
-                            <ArrowUp size={14} />
-                          )}
-                          Invia subito
-                        </button>
-                      </li>
-                    ))}
-                  </ol>
-                  <small>
-                    I messaggi partono in ordine al termine del task. “Invia subito” interrompe il
-                    task attivo.
-                  </small>
-                </section>
-              )}
+              <QueuePanel
+                chat={current}
+                refresh={() => refresh(current.id)}
+                sendNow={sendNow}
+                sendingNow={sendingNow}
+                onError={setError}
+              />
+              {draftError && <p role="alert">{draftError}</p>}
               <form
                 className="composer"
                 onPaste={(e) => {
@@ -1047,7 +1075,7 @@ function App() {
                 {images.length > 0 && (
                   <ImageAttachments
                     files={images}
-                    disabled={sending}
+                    disabled={sending || !draftReady}
                     onRemove={(index) => setImages((files) => files.filter((_, i) => i !== index))}
                   />
                 )}
@@ -1056,9 +1084,9 @@ function App() {
                   type="file"
                   hidden
                   multiple
-                  accept="image/png,image/jpeg,image/webp,image/gif"
-                  aria-label="Seleziona immagini"
-                  disabled={sending}
+                  accept="image/png,image/jpeg,image/webp,image/gif,.pdf,.docx,.xlsx,.csv,.txt,.md,.json"
+                  aria-label="Seleziona allegati"
+                  disabled={sending || !draftReady}
                   onChange={(e) => {
                     addImages(Array.from(e.target.files || []));
                     e.target.value = '';
@@ -1072,7 +1100,8 @@ function App() {
                       : 'Scrivi un messaggio o parliamone…'
                   }
                   value={draft}
-                  disabled={sending}
+                  disabled={sending || !draftReady}
+                  maxLength={40000}
                   onChange={(e) => setDraft(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -1090,9 +1119,9 @@ function App() {
                     <button
                       type="button"
                       className="voice-button"
-                      aria-label="Allega immagini"
-                      title="Allega immagini (massimo 4, 5 MB ciascuna)"
-                      disabled={sending}
+                      aria-label="Allega immagini e documenti"
+                      title="Allega fino a 4 file: immagini 5 MB, documenti 20 MB"
+                      disabled={sending || !draftReady}
                       onClick={() => imageInput.current?.click()}
                     >
                       <Paperclip size={19} />
@@ -1109,11 +1138,13 @@ function App() {
                     </button>
                     <button
                       className="send-button"
-                      aria-label={working ? 'Aggiungi alla coda' : 'Invia messaggio'}
+                      aria-label={
+                        working || current.queue_paused ? 'Aggiungi alla coda' : 'Invia messaggio'
+                      }
                       title={
                         working ? 'Il messaggio partirà al termine del task' : 'Invia messaggio'
                       }
-                      disabled={sending || (!draft.trim() && !images.length)}
+                      disabled={sending || !draftReady || (!draft.trim() && !images.length)}
                     >
                       <ArrowUp size={19} />
                     </button>

@@ -16,16 +16,18 @@ export function ImageAttachments({
     return () => next.forEach((url) => URL.revokeObjectURL(url));
   }, [files]);
   return (
-    <div className="image-attachments" aria-label="Immagini da inviare">
+    <div className="image-attachments" aria-label="Allegati da inviare">
       {files.map((file, index) => (
         <div className="image-draft" key={index}>
-          {urls[index] && <img src={urls[index]} alt={file.name} />}
+          {file.type.startsWith('image/') && urls[index] && (
+            <img src={urls[index]} alt={file.name} />
+          )}
           <span>{file.name}</span>
           <button
             type="button"
             disabled={disabled}
             onClick={() => onRemove(index)}
-            aria-label={`Rimuovi immagine ${index + 1}`}
+            aria-label={`Rimuovi allegato ${index + 1}`}
           >
             ×
           </button>

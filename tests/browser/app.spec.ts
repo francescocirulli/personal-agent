@@ -921,13 +921,13 @@ test('chat images: attachment picker, paste, remove, failed upload retry and his
     ).json();
     try {
       await page.goto(`/?chat=${chat.id}`);
-      await expect(page.getByRole('button', { name: 'Allega immagini' })).toBeVisible();
-      const picker = page.getByLabel('Seleziona immagini');
+      await expect(page.getByRole('button', { name: 'Allega immagini e documenti' })).toBeVisible();
+      const picker = page.getByLabel('Seleziona allegati');
       await picker.setInputFiles({ name: 'selezionata.png', mimeType: 'image/png', buffer: png });
       await expect(
-        page.getByLabel('Immagini da inviare').getByAltText('selezionata.png'),
+        page.getByLabel('Allegati da inviare').getByAltText('selezionata.png'),
       ).toBeVisible();
-      await page.getByRole('button', { name: 'Rimuovi immagine 1' }).click();
+      await page.getByRole('button', { name: 'Rimuovi allegato 1' }).click();
       await expect(
         page.getByRole('button', { name: 'Invia messaggio', exact: true }),
       ).toBeDisabled();
@@ -941,7 +941,7 @@ test('chat images: attachment picker, paste, remove, failed upload retry and his
         );
       }, Array.from(png));
       await expect(
-        page.getByLabel('Immagini da inviare').getByAltText('incollata.png'),
+        page.getByLabel('Allegati da inviare').getByAltText('incollata.png'),
       ).toBeVisible();
       await picker.setInputFiles({ name: 'seconda.png', mimeType: 'image/png', buffer: png });
       await page.route(
@@ -951,11 +951,11 @@ test('chat images: attachment picker, paste, remove, failed upload retry and his
       );
       await page.getByRole('button', { name: 'Invia messaggio', exact: true }).click();
       await expect(page.getByText('Errore upload di prova', { exact: true })).toBeVisible();
-      await expect(page.getByLabel('Immagini da inviare').locator('img')).toHaveCount(2);
+      await expect(page.getByLabel('Allegati da inviare').locator('img')).toHaveCount(2);
       await page.getByRole('button', { name: 'Invia messaggio', exact: true }).click();
-      await expect(page.getByLabel('Immagini da inviare')).toHaveCount(0);
+      await expect(page.getByLabel('Allegati da inviare')).toHaveCount(0);
       await expect(page.locator('.message.user img')).toHaveCount(2);
-      await expect(page.getByRole('button', { name: 'Allega immagini' })).toBeEnabled();
+      await expect(page.getByRole('button', { name: 'Allega immagini e documenti' })).toBeEnabled();
       await page.reload();
       await expect(page.locator('.message.user img')).toHaveCount(2);
       await expect
@@ -976,9 +976,11 @@ test('chat images: attachment picker, paste, remove, failed upload retry and his
         buffer: Buffer.from('<svg/>'),
       });
       await expect(
-        page.getByText('Usa PNG, JPEG, WebP o GIF, massimo 5 MB per immagine.'),
+        page.getByText(
+          'Usa immagini fino a 5 MB o PDF, DOCX, XLSX, CSV, TXT, Markdown e JSON fino a 20 MB.',
+        ),
       ).toBeVisible();
-      await expect(page.getByLabel('Immagini da inviare')).toHaveCount(0);
+      await expect(page.getByLabel('Allegati da inviare')).toHaveCount(0);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );

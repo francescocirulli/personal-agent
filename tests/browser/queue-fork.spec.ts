@@ -18,7 +18,7 @@ test('mobile queue: compose while working, reload, send now and automatic drain'
     await request.post(`${base}/turns`, { data: { text: `Messaggio precedente ${i}` } });
   const composer = page.getByRole('textbox', { name: 'Messaggio' });
   await expect(composer).toBeEnabled();
-  await expect(page.getByRole('button', { name: 'Allega immagini' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Allega immagini e documenti' })).toBeEnabled();
   await composer.fill('Messaggio urgente');
   await page.getByRole('button', { name: 'Aggiungi alla coda' }).click();
   const queue = page.getByRole('region', { name: 'Messaggi in coda' });

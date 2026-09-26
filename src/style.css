@@ -2544,3 +2544,114 @@ button svg {
   max-height: 180px;
   overflow-y: auto;
 }
+
+.file-cards {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0;
+}
+.file-cards:empty {
+  display: none;
+}
+.file-card {
+  padding: 12px;
+  border: 1px solid var(--border, #444);
+  border-radius: 12px;
+  overflow-wrap: anywhere;
+}
+.file-card > div,
+.queue-actions,
+.queue-heading,
+.search-pages {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.file-card a,
+.file-card button {
+  font-size: 13px;
+  color: inherit;
+}
+.file-card button,
+.queue-actions button,
+.queue-heading button,
+.message-queue form button,
+.search-pages button {
+  padding: 7px 10px;
+  border: 1px solid #555;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.queue-heading {
+  justify-content: space-between;
+}
+.message-queue {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.message-queue > .queue-heading,
+.message-queue > small {
+  flex-shrink: 0;
+}
+.message-queue ol {
+  min-height: 0;
+  overflow-y: auto;
+}
+.message-queue li {
+  flex-wrap: wrap;
+}
+.message-queue li > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.message-queue li .queue-actions {
+  flex: 1 1 100%;
+}
+.message-queue form {
+  width: 100%;
+}
+.message-queue textarea {
+  width: 100%;
+  min-height: 80px;
+  resize: vertical;
+  background: #222;
+  color: #eee;
+  border: 1px solid #555;
+  border-radius: 8px;
+  padding: 8px;
+}
+.search-results {
+  padding: 8px;
+}
+.search-results h3 {
+  font-size: 13px;
+  color: #bbb;
+}
+.search-result {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  padding: 12px;
+  margin-bottom: 8px;
+  text-align: left;
+  color: inherit;
+  background: #303030;
+  border: 0;
+  border-radius: 10px;
+  overflow-wrap: anywhere;
+}
+.search-result small {
+  color: #aaa;
+}
+.search-result span {
+  font-size: 13px;
+}
+.message.search-highlight {
+  outline: 2px solid #a7a7a7;
+  outline-offset: 5px;
+  border-radius: 8px;
+}

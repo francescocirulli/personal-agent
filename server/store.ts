@@ -1,5 +1,6 @@
 import type { Effort } from './agent-effort';
 import type { ChatImage } from './images';
+import type { ChatFile } from './files';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
@@ -17,6 +18,7 @@ export interface Conversation {
   effort: Effort;
   session_id: string | null;
   workspace: string | null;
+  queue_paused: number;
   created_at: number;
   updated_at: number;
 }
@@ -91,6 +93,26 @@ export class Store {
         .some((c) => c.name === 'effort')
     )
       this.db.exec("ALTER TABLE conversations ADD COLUMN effort TEXT NOT NULL DEFAULT 'high'");
+    if (
+      !this.db
+        .prepare('PRAGMA table_info(conversations)')
+        .all()
+        .some((c) => c.name === 'queue_paused')
+    )
+      this.db.exec('ALTER TABLE conversations ADD COLUMN queue_paused INTEGER NOT NULL DEFAULT 0');
+    if (
+      !this.db
+        .prepare('PRAGMA table_info(run_queue)')
+        .all()
+        .some((c) => c.name === 'bypass_pause')
+    )
+      this.db.exec('ALTER TABLE run_queue ADD COLUMN bypass_pause INTEGER NOT NULL DEFAULT 0');
+    this.db.function('search_fold', { deterministic: true }, (value) =>
+      String(value ?? '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase(),
+    );
     this.db
       .prepare(
         "UPDATE runs SET status='interrupted',error='Il server è stato riavviato. Il lavoro non viene rieseguito automaticamente.',updated_at=? WHERE status IN ('running','transcribing')",
@@ -131,15 +153,30 @@ export class Store {
       .prepare('SELECT id,name,mime FROM attachments WHERE message_id=? ORDER BY rowid')
       .all(messageId) as unknown as Attachment[];
   }
-  messageImages(messageId: string): ChatImage[] {
+  messageFiles(messageId: string): ChatFile[] {
     return this.db
       .prepare('SELECT name,mime,data FROM attachments WHERE message_id=? ORDER BY rowid')
       .all(messageId)
       .map((row) => ({
         name: String(row.name),
-        mime: 'image/jpeg',
+        mime: String(row.mime),
         data: Buffer.from(row.data as Uint8Array),
       }));
+  }
+  messageImages(messageId: string): ChatImage[] {
+    return this.messageFiles(messageId).filter((f) => f.mime === 'image/jpeg') as ChatImage[];
+  }
+  search(query: string, offset = 0) {
+    const rows = this.db
+      .prepare(
+        `SELECT m.id,m.conversation_id,m.role,c.title,m.created_at,
+      substr(m.text,max(1,instr(search_fold(m.text),search_fold(?))-65),240) AS excerpt
+      FROM messages m JOIN conversations c ON c.id=m.conversation_id JOIN runs r ON r.id=m.run_id
+      WHERE r.status<>'queued' AND instr(search_fold(m.text),search_fold(?))>0
+      ORDER BY m.created_at DESC,m.rowid DESC LIMIT 41 OFFSET ?`,
+      )
+      .all(query, query, offset);
+    return { results: rows.slice(0, 40), hasMore: rows.length > 40 };
   }
   queue(conversationId: string) {
     return (
@@ -152,7 +189,7 @@ export class Store {
         .all(conversationId) as unknown as Message[]
     ).map((m) => ({ ...m, attachments: this.attachments(m.id) }));
   }
-  enqueue(conversationId: string, text: string, images: ChatImage[]) {
+  enqueue(conversationId: string, text: string, images: ChatFile[]) {
     const runId = randomUUID(),
       now = Date.now();
     this.db.exec('BEGIN IMMEDIATE');
@@ -205,7 +242,7 @@ export class Store {
           message.role,
           message.text,
           message.voice_text,
-          this.messageImages(message.id),
+          this.messageFiles(message.id),
         );
         this.db.prepare('UPDATE messages SET created_at=? WHERE id=?').run(message.created_at, id);
       }
@@ -272,7 +309,7 @@ export class Store {
     role: Message['role'],
     text: string,
     voice = '',
-    images: ChatImage[] = [],
+    images: ChatFile[] = [],
   ) {
     this.db.exec('BEGIN IMMEDIATE');
     let id: string;
@@ -292,7 +329,7 @@ export class Store {
     role: Message['role'],
     text: string,
     voice: string,
-    images: ChatImage[],
+    images: ChatFile[],
   ) {
     const id = randomUUID();
     const last = this.db
