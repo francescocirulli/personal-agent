@@ -451,36 +451,36 @@ function App() {
     setVoiceChat(selected);
     voiceSelection.current = selected;
     if (!settings?.voiceAvailable) return;
+    const id = selected;
+    const mic = new HandsFree(
+      (blob) => {
+        if (voiceSelection.current === id && !mutedRef.current) void send(undefined, blob, id);
+      },
+      (value, active) => {
+        setLevel(value);
+        setSpeaking(active);
+      },
+      (message) => {
+        setError(message);
+        stopVoice();
+      },
+    );
+    capture.current = mic;
     try {
-      await speaker.current!.unlock();
-      const id = selected;
-      if (voiceSelection.current !== id) return;
-      const mic = new HandsFree(
-        (blob) => {
-          if (voiceSelection.current === id && !mutedRef.current) void send(undefined, blob, id);
-        },
-        (value, active) => {
-          setLevel(value);
-          setSpeaking(active);
-        },
-        (message) => {
-          setError(message);
-          stopVoice();
-        },
-      );
-      capture.current = mic;
+      // Both calls begin in the tap handler. Playback priming is best-effort:
+      // a blocked or pending play() must not prevent microphone permission.
+      void speaker.current!.unlock().catch((e) => console.warn('Audio priming failed', e));
       await mic.start();
-      if (voiceSelection.current !== id) {
+      if (capture.current !== mic || voiceSelection.current !== id) {
         mic.stop();
         return;
       }
       mic.setEnabled(!mutedRef.current && !workingRef.current && speaker.current!.state === 'idle');
       setMicrophoneReady(true);
     } catch (e) {
+      if (capture.current !== mic) return;
       console.warn('Voice initialization failed', e);
-      setError(
-        'Non riesco ad accedere al microfono. Controlla il permesso e usa una connessione HTTPS.',
-      );
+      setError((e as Error).message || 'Non riesco ad avviare la voce. Chiudi e riapri l’app.');
       stopVoice();
     }
   }

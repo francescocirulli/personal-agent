@@ -132,13 +132,45 @@ export class HandsFree {
     private onError: (error: string) => void,
   ) {}
   async start() {
+    if (!window.isSecureContext)
+      throw new Error('Il microfono richiede una connessione HTTPS. Apri il sito con HTTPS.');
     if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder)
-      throw new Error('Il microfono richiede HTTPS e un browser compatibile.');
+      throw new Error(
+        'La registrazione vocale non è disponibile in questo browser. Prova Safari aggiornato.',
+      );
     audioSessionType('play-and-record');
-    this.stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-      video: false,
-    });
+    try {
+      this.stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        video: false,
+      });
+    } catch (e) {
+      const name = (e as Error).name;
+      if (name === 'NotAllowedError' || name === 'SecurityError') {
+        const standalone =
+          (navigator as Navigator & { standalone?: boolean }).standalone ||
+          window.matchMedia('(display-mode: standalone)').matches;
+        throw new Error(
+          standalone
+            ? 'Accesso al microfono negato nell’app aperta dalla Home. Chiudi e riapri l’app e consenti l’accesso se richiesto. Se continua, usa il sito in Safari.'
+            : 'Accesso al microfono negato. Consenti il microfono nelle impostazioni del sito e riprova.',
+          { cause: e },
+        );
+      }
+      if (name === 'NotFoundError')
+        throw new Error('Nessun microfono disponibile. Controlla il dispositivo e riprova.', {
+          cause: e,
+        });
+      if (name === 'NotReadableError' || name === 'AbortError')
+        throw new Error(
+          'Il telefono non riesce ad aprire il microfono. Termina eventuali chiamate o registrazioni e riprova.',
+          { cause: e },
+        );
+      throw new Error(
+        `Non riesco ad aprire il microfono (${name || 'errore sconosciuto'}). Chiudi e riapri l’app.`,
+        { cause: e },
+      );
+    }
     // Start closed: the caller applies its current mute state after permission resolves.
     this.stream.getAudioTracks().forEach((track) => {
       track.enabled = false;
@@ -147,8 +179,16 @@ export class HandsFree {
       this.stream.getTracks().forEach((t) => t.stop());
       return;
     }
-    this.context = new AudioContext();
-    await this.context.resume();
+    try {
+      this.context = new AudioContext();
+      await this.context.resume();
+    } catch (e) {
+      throw new Error(
+        'Il microfono è autorizzato, ma non riesco ad avviare l’audio. Chiudi e riapri l’app, poi riprova Voce.',
+        { cause: e },
+      );
+    }
+    if (this.stopped) return;
     const source = this.context.createMediaStreamSource(this.stream),
       analyser = this.context.createAnalyser();
     analyser.fftSize = 1024;
