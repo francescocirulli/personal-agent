@@ -1,3 +1,4 @@
+import type { ChatImage } from './images';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
@@ -17,7 +18,13 @@ export interface Conversation {
   created_at: number;
   updated_at: number;
 }
+export interface Attachment {
+  id: string;
+  name: string;
+  mime: string;
+}
 export interface Message {
+  attachments?: Attachment[];
   id: string;
   conversation_id: string;
   run_id: string;
@@ -51,6 +58,8 @@ export class Store {
       CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL REFERENCES conversations(id), status TEXT NOT NULL, error TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
       CREATE UNIQUE INDEX IF NOT EXISTS one_active_run ON runs(conversation_id) WHERE status IN ('running','transcribing');
       CREATE TABLE IF NOT EXISTS messages (id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL REFERENCES conversations(id), run_id TEXT NOT NULL REFERENCES runs(id), role TEXT NOT NULL, text TEXT NOT NULL, voice_text TEXT NOT NULL, created_at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS attachments (id TEXT PRIMARY KEY, message_id TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE, name TEXT NOT NULL, mime TEXT NOT NULL, data BLOB NOT NULL);
+      CREATE INDEX IF NOT EXISTS attachments_message ON attachments(message_id);
       CREATE INDEX IF NOT EXISTS messages_chat ON messages(conversation_id, created_at);
       CREATE TABLE IF NOT EXISTS activity (id INTEGER PRIMARY KEY AUTOINCREMENT, conversation_id TEXT NOT NULL REFERENCES conversations(id), run_id TEXT NOT NULL REFERENCES runs(id), text TEXT NOT NULL, created_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY AUTOINCREMENT, data TEXT NOT NULL);
@@ -100,9 +109,15 @@ export class Store {
     return this.conversation(id)!;
   }
   messages(id: string) {
-    return this.db
+    const messages = this.db
       .prepare('SELECT * FROM messages WHERE conversation_id=? ORDER BY created_at,rowid')
       .all(id) as unknown as Message[];
+    return messages.map((m) => ({ ...m, attachments: this.attachments(m.id) }));
+  }
+  attachments(messageId: string) {
+    return this.db
+      .prepare('SELECT id,name,mime FROM attachments WHERE message_id=? ORDER BY rowid')
+      .all(messageId) as unknown as Attachment[];
   }
   rename(id: string, title: string) {
     this.db
@@ -160,11 +175,23 @@ export class Store {
     role: Message['role'],
     text: string,
     voice = '',
+    images: ChatImage[] = [],
   ) {
     const id = randomUUID();
-    this.db
-      .prepare('INSERT INTO messages VALUES (?,?,?,?,?,?,?)')
-      .run(id, conversationId, runId, role, text, voice, Date.now());
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      this.db
+        .prepare('INSERT INTO messages VALUES (?,?,?,?,?,?,?)')
+        .run(id, conversationId, runId, role, text, voice, Date.now());
+      for (const image of images)
+        this.db
+          .prepare('INSERT INTO attachments VALUES (?,?,?,?,?)')
+          .run(randomUUID(), id, image.name, image.mime, image.data);
+      this.db.exec('COMMIT');
+    } catch (e) {
+      this.db.exec('ROLLBACK');
+      throw e;
+    }
     this.touch(conversationId);
     return this.message(id)!;
   }

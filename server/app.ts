@@ -1,3 +1,4 @@
+import { prepareImages, ImageError, type ChatImage } from './images';
 import { agentModels, modelSchema } from './agent-models';
 import express, { type Request, type Response, type NextFunction } from 'express';
 import multer from 'multer';
@@ -58,7 +59,7 @@ export function createApp(config: Config) {
   >();
   const upload = multer({
     storage: multer.memoryStorage(),
-    limits: { fileSize: 20 * 1024 * 1024, files: 1, fields: 3 },
+    limits: { fileSize: 20 * 1024 * 1024, files: 4, fields: 3, fieldSize: 160000 },
   });
   const pushEnabled = !!(config.vapidPrivate && config.vapidPublic);
   if (pushEnabled)
@@ -123,6 +124,7 @@ export function createApp(config: Config) {
     controller: AbortController,
     text?: string,
     file?: Express.Multer.File,
+    images: ChatImage[] = [],
   ) {
     let failed = false;
     let mcpAccess: ReturnType<McpService['access']> | undefined;
@@ -132,7 +134,7 @@ export function createApp(config: Config) {
       const signal = controller.signal;
       const prompt = file ? await audio.transcribe(file.buffer, file.mimetype, signal) : text!;
       signal.throwIfAborted();
-      store.addMessage(chat.id, runId, 'user', prompt);
+      store.addMessage(chat.id, runId, 'user', prompt, '', images);
       if (chat.title === 'Nuova conversazione') {
         store.db
           .prepare('UPDATE conversations SET title=? WHERE id=? AND title_custom=0')
@@ -210,6 +212,7 @@ export function createApp(config: Config) {
         },
         mcpAccess,
         skillAccess.instructions,
+        images,
       );
       signal.throwIfAborted();
       if (protocolFailure) throw new Error(protocolFailure);
@@ -603,32 +606,79 @@ export function createApp(config: Config) {
     publish({ type: 'deleted', conversationId: chat.id });
     res.json({ ok: true });
   });
-  app.post('/api/conversations/:id/turns', upload.single('audio'), (req, res) => {
+  app.get('/api/conversations/:id/images/:imageId', (req, res) => {
     const chat = getChat(String(req.params.id));
-    if (active.has(chat.id))
-      throw new HttpError(409, 'Questa chat sta già lavorando. Attendi il risultato.');
-    if (active.size >= config.maxRuns)
-      throw new HttpError(
-        429,
-        `Sono già attivi ${config.maxRuns} task. Riprova quando uno termina.`,
-      );
-    const text = req.file ? undefined : z.string().trim().min(1).max(40000).parse(req.body.text);
-    if (req.file && !config.audioKey)
-      throw new HttpError(503, 'Configura la chiave OpenRouter per usare la voce.');
-    const runId = randomUUID(),
-      now = Date.now(),
-      controller = new AbortController();
-    store.db
-      .prepare('INSERT INTO runs VALUES (?,?,?,?,?,?)')
-      .run(runId, chat.id, req.file ? 'transcribing' : 'running', null, now, now);
-    store.touch(chat.id);
-    // Install the reservation before any async operation. HTTP disconnect never owns this controller.
-    const handle = { controller, promise: Promise.resolve() };
-    active.set(chat.id, handle);
-    publish({ type: 'started', conversationId: chat.id, runId });
-    handle.promise = execute(chat, runId, controller, text, req.file);
-    res.status(202).json({ runId });
+    const id = z.string().uuid().parse(req.params.imageId);
+    const image = store.db
+      .prepare(
+        'SELECT a.mime,a.data FROM attachments a JOIN messages m ON m.id=a.message_id WHERE a.id=? AND m.conversation_id=?',
+      )
+      .get(id, chat.id);
+    if (!image) throw new HttpError(404, 'Immagine non trovata.');
+    res.type(String(image.mime)).send(Buffer.from(image.data as Uint8Array));
   });
+  app.post(
+    '/api/conversations/:id/turns',
+    upload.fields([
+      { name: 'audio', maxCount: 1 },
+      { name: 'images', maxCount: 4 },
+    ]),
+    async (req, res) => {
+      let chat = getChat(String(req.params.id));
+      if (active.has(chat.id))
+        throw new HttpError(409, 'Questa chat sta già lavorando. Attendi il risultato.');
+      if (active.size >= config.maxRuns)
+        throw new HttpError(
+          429,
+          `Sono già attivi ${config.maxRuns} task. Riprova quando uno termina.`,
+        );
+      const files = (req.files || {}) as Record<string, Express.Multer.File[]>;
+      const audioFile = files.audio?.[0];
+      const imageFiles = files.images || [];
+      if (audioFile && imageFiles.length)
+        throw new HttpError(
+          400,
+          'Invia le immagini con un messaggio di testo, separato dalla registrazione vocale.',
+        );
+      const text = audioFile
+        ? undefined
+        : z
+            .string()
+            .trim()
+            .max(40000)
+            .parse(req.body?.text ?? '');
+      if (!audioFile && !text && !imageFiles.length)
+        throw new HttpError(400, 'Scrivi un messaggio o allega un’immagine.');
+      if (audioFile && !config.audioKey)
+        throw new HttpError(503, 'Configura la chiave OpenRouter per usare la voce.');
+      const images = await prepareImages(imageFiles);
+      // Image decoding yields: recheck state before reserving a run.
+      chat = getChat(chat.id);
+      if (active.has(chat.id)) throw new HttpError(409, 'Questa chat sta già lavorando.');
+      if (active.size >= config.maxRuns)
+        throw new HttpError(429, 'Tutti gli agenti sono occupati. Riprova tra poco.');
+      const runId = randomUUID(),
+        now = Date.now(),
+        controller = new AbortController();
+      store.db
+        .prepare('INSERT INTO runs VALUES (?,?,?,?,?,?)')
+        .run(runId, chat.id, audioFile ? 'transcribing' : 'running', null, now, now);
+      store.touch(chat.id);
+      // Install the reservation before any async operation. HTTP disconnect never owns this controller.
+      const handle = { controller, promise: Promise.resolve() };
+      active.set(chat.id, handle);
+      publish({ type: 'started', conversationId: chat.id, runId });
+      handle.promise = execute(
+        chat,
+        runId,
+        controller,
+        text || (images.length ? 'Descrivi le immagini allegate.' : undefined),
+        audioFile,
+        images,
+      );
+      res.status(202).json({ runId });
+    },
+  );
   app.post('/api/conversations/:id/cancel', (req, res) => {
     getChat(String(req.params.id));
     active.get(String(req.params.id))?.controller.abort();
@@ -737,10 +787,14 @@ export function createApp(config: Config) {
     if (err instanceof z.ZodError)
       return res.status(400).json({ error: 'Dati non validi. Controlla i campi inseriti.' });
     if (err instanceof multer.MulterError)
-      return res.status(413).json({ error: 'Registrazione troppo grande (massimo 20 MB).' });
+      return res.status(413).json({
+        error:
+          'Allegati non validi o troppo grandi: massimo 4 immagini da 5 MB oppure una registrazione da 20 MB.',
+      });
     res
       .status(
-        err instanceof HttpError ||
+        err instanceof ImageError ||
+          err instanceof HttpError ||
           err instanceof McpError ||
           err instanceof BrowserError ||
           err instanceof SkillError ||
@@ -750,6 +804,7 @@ export function createApp(config: Config) {
       )
       .json({
         error:
+          err instanceof ImageError ||
           err instanceof HttpError ||
           err instanceof McpError ||
           err instanceof BrowserError ||

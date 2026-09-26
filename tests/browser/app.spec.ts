@@ -867,3 +867,86 @@ test('terminal browser opens from CLI request and supports touch, private text, 
   await expect(dialog).toHaveCount(0);
   await expect(page.getByRole('dialog', { name: 'Terminale', exact: true })).toBeVisible();
 });
+
+test('chat images: attachment picker, paste, remove, failed upload retry and history on both agents', async ({
+  page,
+  request,
+}) => {
+  const { default: sharp } = await import('sharp');
+  const png = await sharp({
+    create: { width: 120, height: 80, channels: 3, background: '#3799ee' },
+  })
+    .png()
+    .toBuffer();
+  for (const agent of ['claude', 'codex']) {
+    const chat = await (
+      await request.post('/api/conversations', { data: { agent, title: `Immagini ${agent}` } })
+    ).json();
+    try {
+      await page.goto(`/?chat=${chat.id}`);
+      await expect(page.getByRole('button', { name: 'Allega immagini' })).toBeVisible();
+      const picker = page.getByLabel('Seleziona immagini');
+      await picker.setInputFiles({ name: 'selezionata.png', mimeType: 'image/png', buffer: png });
+      await expect(
+        page.getByLabel('Immagini da inviare').getByAltText('selezionata.png'),
+      ).toBeVisible();
+      await page.getByRole('button', { name: 'Rimuovi immagine 1' }).click();
+      await expect(
+        page.getByRole('button', { name: 'Invia messaggio', exact: true }),
+      ).toBeDisabled();
+      await page.getByLabel('Messaggio', { exact: true }).evaluate((element, bytes) => {
+        const clipboardData = new DataTransfer();
+        clipboardData.items.add(
+          new File([new Uint8Array(bytes)], 'incollata.png', { type: 'image/png' }),
+        );
+        element.dispatchEvent(
+          new ClipboardEvent('paste', { clipboardData, bubbles: true, cancelable: true }),
+        );
+      }, Array.from(png));
+      await expect(
+        page.getByLabel('Immagini da inviare').getByAltText('incollata.png'),
+      ).toBeVisible();
+      await picker.setInputFiles({ name: 'seconda.png', mimeType: 'image/png', buffer: png });
+      await page.route(
+        `**/api/conversations/${chat.id}/turns`,
+        (route) => route.fulfill({ status: 503, json: { error: 'Errore upload di prova' } }),
+        { times: 1 },
+      );
+      await page.getByRole('button', { name: 'Invia messaggio', exact: true }).click();
+      await expect(page.getByText('Errore upload di prova', { exact: true })).toBeVisible();
+      await expect(page.getByLabel('Immagini da inviare').locator('img')).toHaveCount(2);
+      await page.getByRole('button', { name: 'Invia messaggio', exact: true }).click();
+      await expect(page.getByLabel('Immagini da inviare')).toHaveCount(0);
+      await expect(page.locator('.message.user img')).toHaveCount(2);
+      await expect(page.getByRole('button', { name: 'Allega immagini' })).toBeEnabled();
+      await page.reload();
+      await expect(page.locator('.message.user img')).toHaveCount(2);
+      await expect
+        .poll(() =>
+          page
+            .locator('.message.user img')
+            .evaluateAll((images) =>
+              images.every((image) => (image as HTMLImageElement).naturalWidth > 0),
+            ),
+        )
+        .toBe(true);
+      const detail = await (await request.get(`/api/conversations/${chat.id}`)).json();
+      expect(detail.messages[0].text).toBe('Descrivi le immagini allegate.');
+      expect(detail.messages[0].attachments).toHaveLength(2);
+      await picker.setInputFiles({
+        name: 'invalid.svg',
+        mimeType: 'image/svg+xml',
+        buffer: Buffer.from('<svg/>'),
+      });
+      await expect(
+        page.getByText('Usa PNG, JPEG, WebP o GIF, massimo 5 MB per immagine.'),
+      ).toBeVisible();
+      await expect(page.getByLabel('Immagini da inviare')).toHaveCount(0);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+    } finally {
+      await request.post(`/api/conversations/${chat.id}/delete`, { data: {} });
+    }
+  }
+});

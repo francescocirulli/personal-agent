@@ -2393,3 +2393,44 @@ button svg {
     padding: 0 16px 12px;
   }
 }
+
+.image-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 0;
+}
+.image-attachments img {
+  width: 130px;
+  height: 110px;
+  object-fit: contain;
+  border-radius: 10px;
+  background: #171717;
+}
+.image-attachments a {
+  display: block;
+}
+.image-draft {
+  position: relative;
+  width: 130px;
+}
+.image-draft span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.image-draft button {
+  position: absolute;
+  top: 0;
+  right: 0;
+  min-width: 32px;
+  min-height: 32px;
+  background: #303030;
+  border-radius: 50%;
+}
+.composer .image-attachments {
+  max-height: 180px;
+  overflow-y: auto;
+}

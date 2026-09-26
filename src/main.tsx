@@ -1,9 +1,11 @@
+import { ImageAttachments } from './ImageAttachments';
 import { ModelPicker } from './ModelPicker';
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import Markdown from 'react-markdown';
 import {
   ArrowUp,
+  Paperclip,
   AudioLines,
   Bell,
   Check,
@@ -60,6 +62,8 @@ function App() {
     [create, setCreate] = useState(false),
     [agent, setAgent] = useState<'claude' | 'codex'>('claude'),
     [repo, setRepo] = useState('');
+  const [images, setImages] = useState<File[]>([]);
+  const imageInput = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState(''),
     [search, setSearch] = useState(''),
     [error, setError] = useState(''),
@@ -145,6 +149,7 @@ function App() {
     setSelected(null);
     setDetail(undefined);
     setDraft('');
+    setImages([]);
     setPreview('');
     history.replaceState({}, '', '/');
   }
@@ -229,6 +234,7 @@ function App() {
     setSidebar(false);
     setPreview('');
     setDraft('');
+    setImages([]);
     setError('');
     history.replaceState({}, '', `/?chat=${id}`);
   }
@@ -386,6 +392,25 @@ function App() {
       setCreating(false);
     }
   }
+  function addImages(files: File[]) {
+    if (workingRef.current) return;
+    if (
+      files.some(
+        (file) =>
+          !['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type) ||
+          file.size > 5 * 1024 * 1024,
+      )
+    ) {
+      setError('Usa PNG, JPEG, WebP o GIF, massimo 5 MB per immagine.');
+      return;
+    }
+    if (images.length + files.length > 4) {
+      setError('Puoi allegare al massimo 4 immagini.');
+      return;
+    }
+    setImages((previous) => [...previous, ...files]);
+    setError('');
+  }
   async function send(text?: string, blob?: Blob, chatId = selection.current) {
     if (!chatId || workingRef.current) return;
     setSending(true);
@@ -399,8 +424,17 @@ function App() {
         form.append('audio', blob, blob.type.includes('mp4') ? 'speech.m4a' : 'speech.webm');
         body = form;
       }
+      if (!blob && images.length) {
+        const form = new FormData();
+        form.append('text', text || '');
+        for (const image of images) form.append('images', image, image.name);
+        body = form;
+      }
       await api(`/conversations/${chatId}/turns`, body);
-      if (!blob) setDraft('');
+      if (!blob && selection.current === chatId) {
+        setDraft('');
+        setImages([]);
+      }
       await refresh(chatId);
     } catch (e) {
       setError((e as Error).message);
@@ -819,6 +853,25 @@ function App() {
                       })}
                     </time>
                   </div>
+                  {!!message.attachments?.length && (
+                    <div className="image-attachments">
+                      {message.attachments.map((image) => (
+                        <a
+                          key={image.id}
+                          href={`/api/conversations/${current.id}/images/${image.id}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          aria-label={`Apri immagine ${image.name}`}
+                        >
+                          <img
+                            src={`/api/conversations/${current.id}/images/${image.id}`}
+                            alt={image.name}
+                            loading="lazy"
+                          />
+                        </a>
+                      ))}
+                    </div>
+                  )}
                   <div className="message-body">
                     <Markdown
                       components={{
@@ -911,11 +964,38 @@ function App() {
             <div className="composer-area">
               <form
                 className="composer"
+                onPaste={(e) => {
+                  const pasted = Array.from(e.clipboardData.files);
+                  if (pasted.length) {
+                    e.preventDefault();
+                    addImages(pasted);
+                  }
+                }}
                 onSubmit={(e) => {
                   e.preventDefault();
-                  if (draft.trim()) void send(draft);
+                  if (draft.trim() || images.length) void send(draft);
                 }}
               >
+                {images.length > 0 && (
+                  <ImageAttachments
+                    files={images}
+                    disabled={working}
+                    onRemove={(index) => setImages((files) => files.filter((_, i) => i !== index))}
+                  />
+                )}
+                <input
+                  ref={imageInput}
+                  type="file"
+                  hidden
+                  multiple
+                  accept="image/png,image/jpeg,image/webp,image/gif"
+                  aria-label="Seleziona immagini"
+                  disabled={working}
+                  onChange={(e) => {
+                    addImages(Array.from(e.target.files || []));
+                    e.target.value = '';
+                  }}
+                />
                 <textarea
                   aria-label="Messaggio"
                   placeholder={
@@ -927,7 +1007,7 @@ function App() {
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                       e.preventDefault();
-                      if (draft.trim() && !working) void send(draft);
+                      if ((draft.trim() || images.length) && !working) void send(draft);
                     }
                   }}
                 />
@@ -937,6 +1017,16 @@ function App() {
                     {current.repo?.split('/')[1] || 'Nessun progetto'}
                   </span>
                   <div>
+                    <button
+                      type="button"
+                      className="voice-button"
+                      aria-label="Allega immagini"
+                      title="Allega immagini (massimo 4, 5 MB ciascuna)"
+                      disabled={working}
+                      onClick={() => imageInput.current?.click()}
+                    >
+                      <Paperclip size={19} />
+                    </button>
                     <button
                       className="voice-button"
                       type="button"
@@ -950,7 +1040,7 @@ function App() {
                     <button
                       className="send-button"
                       aria-label="Invia messaggio"
-                      disabled={working || !draft.trim()}
+                      disabled={working || (!draft.trim() && !images.length)}
                     >
                       <ArrowUp size={19} />
                     </button>

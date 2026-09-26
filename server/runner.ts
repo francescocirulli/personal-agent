@@ -1,5 +1,6 @@
+import type { ChatImage } from './images';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -42,6 +43,7 @@ export function commandFor(
   config: Config,
   chat: Conversation,
   servers: McpAgentServer[] = [],
+  imagePaths: string[] = [],
 ): { bin: string; args: string[] } {
   const claudeMcp = Object.fromEntries(
     servers.map((s) => [
@@ -60,6 +62,7 @@ export function commandFor(
       bin: config.claudeBin,
       args: [
         '-p',
+        ...(imagePaths.length ? ['--input-format', 'stream-json'] : []),
         ...(chat.model ? ['--model', chat.model] : []),
         '--output-format',
         'stream-json',
@@ -76,6 +79,7 @@ export function commandFor(
       ],
     };
   const common = [
+    ...imagePaths.flatMap((file) => ['--image', file]),
     ...(chat.model ? ['--model', chat.model] : []),
     '--json',
     '--skip-git-repo-check',
@@ -213,6 +217,7 @@ export async function runAgent(
   emit: (event: Normalized) => void,
   access?: McpAccess,
   skillInstructions = '',
+  images: ChatImage[] = [],
 ) {
   if (config.demo) {
     emit({ type: 'session', value: chat.session_id || `demo-${chat.id}` });
@@ -224,22 +229,63 @@ export async function runAgent(
     });
     return;
   }
-  const { bin, args } = commandFor(config, chat, access?.servers);
-  await runProcess(
-    bin,
-    args,
-    chat.workspace!,
-    signal,
-    skillPromptFor(input, skillInstructions),
-    (line) => {
-      let event: unknown;
-      try {
-        event = JSON.parse(line);
-      } catch {
-        return;
+  let imageDir: string | undefined;
+  try {
+    const paths: string[] = [];
+    if (images.length) {
+      const root = path.join(config.dataDir, 'image-runs');
+      await mkdir(root, { recursive: true, mode: 0o700 });
+      imageDir = await mkdtemp(path.join(root, 'turn-'));
+      for (const [index, image] of images.entries()) {
+        const file = path.join(imageDir, `${index}.jpg`);
+        await writeFile(file, image.data, { mode: 0o600 });
+        paths.push(file);
       }
-      for (const e of normalize(chat.agent, event)) emit(e);
-    },
-    { ...agentEnvironment(config), ...access?.env },
+    }
+    const { bin, args } = commandFor(config, chat, access?.servers, paths);
+    await runProcess(
+      bin,
+      args,
+      chat.workspace!,
+      signal,
+      agentInputFor(chat, skillPromptFor(input, skillInstructions), images),
+      (line) => {
+        let event: unknown;
+        try {
+          event = JSON.parse(line);
+        } catch {
+          return;
+        }
+        for (const e of normalize(chat.agent, event)) emit(e);
+      },
+      { ...agentEnvironment(config), ...access?.env },
+    );
+  } finally {
+    if (imageDir) await rm(imageDir, { recursive: true, force: true });
+  }
+}
+
+export function agentInputFor(
+  chat: Pick<Conversation, 'agent' | 'session_id'>,
+  prompt: string,
+  images: ChatImage[],
+) {
+  if (chat.agent !== 'claude' || !images.length) return prompt;
+  return (
+    JSON.stringify({
+      type: 'user',
+      session_id: chat.session_id || '',
+      parent_tool_use_id: null,
+      message: {
+        role: 'user',
+        content: [
+          ...images.map((image) => ({
+            type: 'image',
+            source: { type: 'base64', media_type: image.mime, data: image.data.toString('base64') },
+          })),
+          { type: 'text', text: prompt },
+        ],
+      },
+    }) + '\n'
   );
 }
