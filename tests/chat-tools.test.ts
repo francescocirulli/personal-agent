@@ -21,6 +21,7 @@ test('chat selections persist, inherit on legacy chats and forks, and respect gl
     const a = skills.save({ content: content('prima'), agents: ['codex', 'claude'] });
     const b = skills.save({ content: content('seconda'), agents: ['claude'] });
     const inherited = store.create('codex', null, 'Globali');
+    assert.deepEqual(inherited.tools, { mcp: null, skills: [] });
     store.db.prepare('UPDATE conversations SET tools=NULL WHERE id=?').run(inherited.id);
     assert.deepEqual(store.conversation(inherited.id)!.tools, { mcp: null, skills: null });
     const custom = store.create('codex', null, 'Personalizzata', { mcp: [], skills: [a.id, b.id] });
@@ -161,13 +162,43 @@ test('API stores chat tools; MCP grants exclude unselected/disabled connections 
     const skill = await (
       await request('/skills', { content: content('globale'), agents: ['codex'] })
     ).json();
+    for (const input of [
+      { agent: 'codex' },
+      { agent: 'codex', tools: {} },
+      { agent: 'codex', tools: { mcp: null } },
+      { agent: 'codex', tools: { skills: null } },
+      { agent: 'codex', tools: { skills: [skill.id] } },
+    ]) {
+      const created = await request('/conversations', input);
+      assert.equal(created.status, 201);
+      const nextChat = await created.json();
+      const expected = input.tools?.skills === undefined ? [] : input.tools.skills;
+      assert.deepEqual(nextChat.tools, { mcp: null, skills: expected });
+      assert.deepEqual(runtime.store.conversation(nextChat.id)!.tools, nextChat.tools);
+      const nextView = await (await request(`/conversations/${nextChat.id}/tools`)).json();
+      const optedIn = expected === null || expected.length > 0;
+      assert.equal(nextView.skills.find((item: any) => item.id === skill.id).available, optedIn);
+      assert.equal(nextView.mcp.filter((item: any) => item.available).length, 2);
+      const access = await runtime.skills.access(
+        runtime.store.conversation(nextChat.id)!,
+        randomUUID(),
+      );
+      try {
+        assert.equal(access.instructions.includes('"name":"globale"'), optedIn);
+      } finally {
+        await access.release();
+      }
+    }
     assert.equal((await request(`/skills/${skill.id}/enabled`, { enabled: false })).status, 200);
     assert.equal((await (await request(`/skills/${skill.id}`)).json()).enabled, false);
     assert.equal((await request(`/skills/${randomUUID()}/enabled`, { enabled: true })).status, 404);
     const otherSkill = runtime.skills.save({ content: content('solo-claude'), agents: ['claude'] });
     view = await summary();
     assert.ok(view.skills.every((item: any) => !item.available && !item.selected));
-    const inherited = runtime.store.create('codex', 'example/project', 'Con progetto');
+    const inherited = runtime.store.create('codex', 'example/project', 'Con progetto', {
+      mcp: null,
+      skills: null,
+    });
     const workspace = path.join(dir, 'workspace');
     const folder = path.join(workspace, '.claude/skills/progetto');
     await mkdir(folder, { recursive: true });

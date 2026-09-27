@@ -25,7 +25,7 @@ try {
   const global = service.save({ content: md('global-check', markers.global), agents: ['claude'] });
   const chats = [];
   for (const agent of ['claude', 'codex'] as const) {
-    const chat = store.create(agent, 'fixture/skills', 'Skill smoke');
+    const chat = store.create(agent, 'fixture/skills', 'Skill smoke', { mcp: null, skills: null });
     chat.workspace = path.join(dir, agent);
     await mkdir(chat.workspace);
     execFileSync('git', ['init', '--quiet', chat.workspace]);

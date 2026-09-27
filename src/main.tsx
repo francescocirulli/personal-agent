@@ -100,9 +100,9 @@ function App() {
     [sending, setSending] = useState(false),
     [creating, setCreating] = useState(false);
   const [repoRequired, setRepoRequired] = useState(false);
-  const [chatTools, setChatTools] = useState<ChatTools>({ mcp: null, skills: null });
+  const [chatTools, setChatTools] = useState<ChatTools>({ mcp: null, skills: [] });
   useEffect(() => {
-    if (create) setChatTools({ mcp: null, skills: null });
+    if (create) setChatTools({ mcp: null, skills: [] });
   }, [create]);
   const [chatMenu, setChatMenu] = useState<Chat | null>(null),
     [chatAction, setChatAction] = useState<'rename' | 'delete' | null>(null),

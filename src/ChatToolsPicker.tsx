@@ -49,10 +49,15 @@ export function ChatToolsPicker({
     <details className="chat-tools-picker">
       <summary>
         MCP e skill per questa chat
-        {value.mcp !== null || value.skills !== null ? ' · Personalizzati' : ' · Globali'}
+        {value.skills?.length === 0
+          ? ' · Nessuna skill globale'
+          : value.mcp !== null || value.skills !== null
+            ? ' · Personalizzati'
+            : ' · Globali'}
       </summary>
       <p className="settings-note">
-        Scegli tra quelli abilitati in Impostazioni. Le disattivazioni globali hanno sempre
+        Gli MCP seguono le disponibilità globali per default. Le skill globali partono
+        deselezionate: scegli quelle da usare in questa chat. Le disattivazioni globali hanno sempre
         precedenza.
       </p>
       {error && (

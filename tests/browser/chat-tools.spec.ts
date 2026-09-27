@@ -49,7 +49,9 @@ test('new chat customizes globally enabled tools without changing other chats', 
     await expect(modal.getByRole('checkbox', { name: /servizio-da-collegare/ })).toBeDisabled();
     await modal.getByRole('checkbox', { name: 'servizio-attivo', exact: true }).uncheck();
     await modal.getByRole('button', { name: 'Codex', exact: true }).click();
-    await inheritSkills.uncheck();
+    await expect(inheritSkills).not.toBeChecked();
+    await expect(modal.getByRole('checkbox', { name, exact: true })).not.toBeChecked();
+    await modal.getByRole('checkbox', { name, exact: true }).check();
     await expect(modal.getByRole('checkbox', { name, exact: true })).toBeChecked();
     await modal.getByRole('button', { name: 'Claude Code', exact: true }).click();
     await expect(modal.getByRole('checkbox', { name: new RegExp(name) })).toBeDisabled();
@@ -70,16 +72,18 @@ test('new chat customizes globally enabled tools without changing other chats', 
       chat.tools,
     );
     await page.getByRole('button', { name: 'Nuova chat', exact: true }).last().click();
+    await modal.getByRole('button', { name: 'Codex', exact: true }).click();
     await modal.locator('summary').click();
     await expect(inheritMcp).toBeChecked();
-    await expect(inheritSkills).toBeChecked();
+    await expect(inheritSkills).not.toBeChecked();
+    await expect(modal.getByRole('checkbox', { name, exact: true })).not.toBeChecked();
     const next = page.waitForResponse(
       (r) => r.url().endsWith('/api/conversations') && r.request().method() === 'POST',
     );
     await modal.getByRole('button', { name: 'Crea chat' }).click();
     const second = await (await next).json();
     chats.push(second.id);
-    expect(second.tools).toEqual({ mcp: null, skills: null });
+    expect(second.tools).toEqual({ mcp: null, skills: [] });
     await page.goto('/?settings=skills');
     const settings = page.getByRole('dialog', { name: 'Skill', exact: true });
     await settings.getByRole('checkbox', { name: `Abilita globalmente ${name}` }).click();

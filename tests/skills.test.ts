@@ -34,7 +34,7 @@ test('skills: assignment, immutable active turn, repo interoperability, persiste
       () => service.save({ content: md('../escape'), agents: ['claude'] }),
       /Intestazione/,
     );
-    const chat = store.create('claude', 'example/repo', 'Skills');
+    const chat = store.create('claude', 'example/repo', 'Skills', { mcp: null, skills: null });
     chat.workspace = path.join(dir, 'repo');
     for (const [folder, name] of [
       ['.claude/skills/claude-project', 'claude-project'],

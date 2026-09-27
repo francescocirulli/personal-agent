@@ -219,7 +219,7 @@ export class Store {
     agent: Agent,
     repo: string | null,
     title: string,
-    tools: ChatTools = { mcp: null, skills: null },
+    tools: ChatTools = { mcp: null, skills: [] },
   ) {
     const id = randomUUID(),
       now = Date.now();

@@ -9,12 +9,11 @@ const selection = (max: number) =>
     .array(z.string().uuid())
     .max(max)
     .transform((ids) => [...new Set(ids)])
-    .nullable()
-    .default(null);
+    .nullable();
 export const chatToolsInput = z
   .object({
-    mcp: selection(20),
-    skills: selection(100),
+    mcp: selection(20).default(null),
+    skills: selection(100).default([]),
   })
   .strict();
 export type ChatTools = z.infer<typeof chatToolsInput>;
