@@ -349,8 +349,8 @@ export function SkillsSettings({
               </select>
             </label>
             <p className="settings-note">
-              Ogni chat ha una copia indipendente della repo. L’elenco riflette i file di quella
-              copia.
+              L’elenco riflette i file nella cartella della chat, che può essere isolata oppure
+              condivisa con altre chat dello stesso repository.
             </p>
             {projectId && !project && <p>Carico le skill del progetto…</p>}
             {project && !project.ready && (

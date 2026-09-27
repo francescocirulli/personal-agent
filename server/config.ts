@@ -20,6 +20,7 @@ export interface Config {
   vapidPublic: string;
   vapidPrivate: string;
   vapidSubject: string;
+  workspaceMode: 'isolated' | 'shared';
 }
 export function readConfig(): Config {
   const config = {
@@ -41,10 +42,13 @@ export function readConfig(): Config {
     vapidPublic: process.env.VAPID_PUBLIC_KEY || '',
     vapidPrivate: process.env.VAPID_PRIVATE_KEY || '',
     vapidSubject: process.env.VAPID_SUBJECT || 'mailto:admin@example.com',
+    workspaceMode: (process.env.WORKSPACE_MODE || 'isolated') as Config['workspaceMode'],
   };
   if (!['127.0.0.1', '::1', 'localhost'].includes(config.host) && config.password.length < 24)
     throw new Error('APP_PASSWORD deve contenere almeno 24 caratteri per esporre il server.');
   if (!Number.isInteger(config.maxRuns) || config.maxRuns < 1 || config.maxRuns > 16)
     throw new Error('MAX_CONCURRENT_RUNS deve essere compreso tra 1 e 16.');
+  if (!['isolated', 'shared'].includes(config.workspaceMode))
+    throw new Error('WORKSPACE_MODE deve essere isolated oppure shared.');
   return config;
 }

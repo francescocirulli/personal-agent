@@ -42,7 +42,7 @@ Vite serves the UI during development and builds static assets into `dist/`. In 
 
 ## Conversation and run lifecycle
 
-Each conversation fixes its agent and optionally associates a GitHub repository. Model, effort, and tool selection can change for subsequent turns. A repository chat receives its own clone and initial branch; an unassociated chat receives an independent working directory. These are separate directories in one trusted user's runtime, not isolated security containers.
+Each conversation fixes its agent and optionally associates a GitHub repository. Model, effort, and tool selection can change for subsequent turns. Repository chats default to an isolated clone and initial `agent/…` branch. Optional shared mode reuses one persistent checkout per repository under `DATA_DIR/repos/<owner>/<name>`, including its current branch and local changes. An unassociated chat always receives an independent working directory. `WORKSPACE_MODE` sets the server default; the creation dialog can override it. Existing chats remain isolated through an additive database migration. All workspaces belong to one trusted user's runtime; neither mode provides a security container.
 
 Messages and attachments are persisted before execution. There is one active run per chat and a configurable global run limit. Additional messages for an active chat enter a persistent queue. Queue pause, edit, reorder, removal, and immediate-send operations are coordinated with run state. Immediate send cancels the current run and waits for termination before starting the selected message.
 
@@ -52,7 +52,7 @@ Cancellation terminates the process group and escalates after a grace period. At
 
 An explicit final-response marker, `<richiesta_input/>`, records a real need for user input and pauses the queue. It is removed from visible text. A direct user reply takes priority; remaining queued messages stay paused until resumed. A completed process indicates protocol completion, not independently verified task correctness.
 
-Forking a conversation copies history and attachments up to the selected response, agent/model/effort, repository, and tool selection. It does not copy the CLI session, browser session, queue, or uncommitted workspace state. The new chat gets its own workspace and seeds a new CLI session from the copied history.
+Forking a conversation copies history and attachments up to the selected response, agent/model/effort, repository, and tool selection. It does not copy the CLI session, browser session, queue, or uncommitted workspace state. The fork inherits the workspace mode and seeds a new CLI session from the copied history. Isolated forks get their own clone; shared forks reuse the same checkout, so they see its current files rather than a snapshot at the forked message.
 
 Experimental Codex routing is gated by global experimental/JEV flags and per-chat
 configuration. `server/smart-routing.ts` makes a bounded, cancellable OpenRouter
@@ -74,6 +74,8 @@ mode performs no routing requests. Claude routing is rejected when enabled.
 ## Storage and operations
 
 `DATA_DIR` contains `agent.sqlite` (WAL mode), workspaces, audio, browser state/screenshots, tool connection state, and temporary run files. In Docker it is `/data`, with the CLI home at `/data/home` and installed tools at `/data/tools`. Attachments and conversation state persist in SQLite; OAuth state and tokens also live in private MCP files. Back up the entire volume and the separate deployment environment, not just the main SQLite file.
+
+The first shared clone is serialized in memory, staged beside its destination, and renamed only after success. Each waiting chat can cancel independently; the clone continues while any waiter remains. Cancelling the last waiter terminates the clone and waits for staging cleanup. Failures leave no partial checkout and allow a later retry.
 
 Keep a single running instance per data directory. The process coordinates queues, browser contexts, and subprocesses in memory; sharing SQLite across independent replicas does not provide distributed coordination. Schema initialization includes migrations for existing data. Changes must preserve upgrades and recovery from interrupted work.
 
@@ -103,7 +105,7 @@ Voice follows transcription → agent → speech. Coding-agent inference stays i
 
 Document extraction runs in a separate process with time and heap limits. Extracts are bounded and do not perform OCR; original files remain available. Turn export directories accept only direct regular files within count/size limits. Temporary attachment/extraction files are cleaned up after execution; abrupt process termination can leave files for later operational cleanup.
 
-The frontend must preserve mobile accessibility, scroll/focus behavior, queue state, and local drafts. Git panels show local changes or comparison with a selected base, not an atomic snapshot of a running task. Branch operations require a clean workspace and no active/queued task. Manual terminal commands remain outside that coordination.
+The frontend must preserve mobile accessibility, scroll/focus behavior, queue state, and local drafts. Git panels show local changes or comparison with a selected base, not an atomic snapshot of a running task. Branch operations require a clean workspace and no active/queued task in any chat using it, including shared chats whose workspace has not been prepared yet. While an app-managed Git operation is in progress, new turns in the same checkout are rejected and queued turns wait until it finishes. A branch change clears the CLI sessions of all chats sharing the checkout so their next turns re-read the files. Concurrent agent runs in shared mode remain allowed. Agent and manual terminal Git commands remain outside this app-level coordination.
 
 ## Validation boundaries
 

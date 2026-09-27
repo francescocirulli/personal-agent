@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react';
 import {
   Check,
+  Copy,
   FolderGit2,
   Github,
   LoaderCircle,
   LockKeyhole,
   MessageCircle,
   Search,
+  Zap,
 } from 'lucide-react';
-import { api, type GitHubInfo } from './api';
+import { api, type GitHubInfo, type WorkspaceMode } from './api';
 
 export function RepositoryPicker({
   value,
@@ -232,6 +234,37 @@ export function RepositoryPicker({
           )}
         </>
       )}
+    </div>
+  );
+}
+
+export function WorkspaceModePicker({
+  value,
+  onChange,
+}: {
+  value: WorkspaceMode;
+  onChange: (mode: WorkspaceMode) => void;
+}) {
+  return (
+    <div className="repository-picker">
+      <label>Cartella di lavoro</label>
+      <div className="project-mode" role="group" aria-label="Cartella di lavoro">
+        <button type="button" aria-pressed={value === 'shared'} onClick={() => onChange('shared')}>
+          <Zap size={16} /> Condivisa
+        </button>
+        <button
+          type="button"
+          aria-pressed={value === 'isolated'}
+          onClick={() => onChange('isolated')}
+        >
+          <Copy size={16} /> Isolata
+        </button>
+      </div>
+      <small>
+        {value === 'shared'
+          ? 'Riusa una copia del repository: branch e modifiche sono condivisi tra le chat, anche mentre lavorano insieme.'
+          : 'Una copia e un branch dedicati a questa chat: più lenta da preparare, nessuna interferenza.'}
+      </small>
     </div>
   );
 }

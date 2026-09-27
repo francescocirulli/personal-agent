@@ -29,10 +29,13 @@ export interface Conversation {
   effort: Effort;
   session_id: string | null;
   workspace: string | null;
+  workspace_mode: WorkspaceMode;
   queue_paused: number;
   created_at: number;
   updated_at: number;
 }
+// isolated: one clone per chat. shared: every chat on the repository uses one persistent checkout.
+export type WorkspaceMode = 'isolated' | 'shared';
 export interface Attachment {
   id: string;
   name: string;
@@ -169,6 +172,15 @@ export class Store {
         throw error;
       }
     }
+    if (
+      !this.db
+        .prepare('PRAGMA table_info(conversations)')
+        .all()
+        .some((c) => c.name === 'workspace_mode')
+    )
+      this.db.exec(
+        "ALTER TABLE conversations ADD COLUMN workspace_mode TEXT NOT NULL DEFAULT 'isolated'",
+      );
     this.db
       .prepare(
         "UPDATE runs SET status='interrupted',error='Il server è stato riavviato. Il lavoro non viene rieseguito automaticamente.',updated_at=? WHERE status IN ('running','transcribing')",
@@ -251,14 +263,24 @@ export class Store {
     repo: string | null,
     title: string,
     tools: ChatTools = { mcp: null, skills: [] },
+    workspaceMode: WorkspaceMode = 'isolated',
   ) {
     const id = randomUUID(),
       now = Date.now();
     this.db
       .prepare(
-        'INSERT INTO conversations(id,title,agent,repo,created_at,updated_at,tools) VALUES (?,?,?,?,?,?,?)',
+        'INSERT INTO conversations(id,title,agent,repo,created_at,updated_at,tools,workspace_mode) VALUES (?,?,?,?,?,?,?,?)',
       )
-      .run(id, title, agent, repo, now, now, JSON.stringify(tools));
+      .run(
+        id,
+        title,
+        agent,
+        repo,
+        now,
+        now,
+        JSON.stringify(tools),
+        repo ? workspaceMode : 'isolated',
+      );
     return this.conversation(id)!;
   }
   messages(id: string) {
@@ -340,6 +362,7 @@ export class Store {
         source.repo,
         `${source.title.slice(0, 90)} · Fork`,
         source.tools,
+        source.workspace_mode,
       );
       this.db
         .prepare('UPDATE conversations SET model=?,effort=?,title_custom=1 WHERE id=?')

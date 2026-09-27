@@ -1,4 +1,12 @@
-import type { Conversation, Message, Run, Activity, RunStatus } from '../server/store';
+import type {
+  Conversation,
+  Message,
+  Run,
+  Activity,
+  RunStatus,
+  WorkspaceMode,
+} from '../server/store';
+export type { WorkspaceMode };
 export type Chat = Conversation & { status?: RunStatus | null; unread_count?: number };
 export type Detail = Chat & {
   messages: Message[];
@@ -12,6 +20,7 @@ export interface Settings {
   pushPublicKey: string | null;
   maxRuns: number;
   unrestricted: boolean;
+  workspaceMode: WorkspaceMode;
 }
 export interface GitHubInfo {
   connected: boolean;

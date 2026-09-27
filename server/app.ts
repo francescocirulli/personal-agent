@@ -38,7 +38,7 @@ import { Store, type Conversation, type Message } from './store';
 import { AudioService } from './audio';
 import { GitHubService } from './github';
 import { AudioModels, audioSettingsSchema } from './audio-settings';
-import { prepareWorkspace, runAgent } from './runner';
+import { prepareWorkspace, runAgent, sharedWorkspacePath } from './runner';
 import { splitVoice } from './protocol';
 import { McpService, McpError } from './mcp';
 import { BrowserService, BrowserError } from './browser';
@@ -65,6 +65,7 @@ const chatInput = z.object({
     .nullable()
     .optional(),
   title: z.string().trim().min(1).max(100).default('Nuova conversazione'),
+  workspaceMode: z.enum(['isolated', 'shared']).optional(),
 });
 export function createApp(config: Config, routingDependencies: RoutingDependencies = {}) {
   const github = new GitHubService(config.demo);
@@ -134,6 +135,22 @@ export function createApp(config: Config, routingDependencies: RoutingDependenci
     if (!c) throw new HttpError(404, 'Chat non trovata.');
     return c;
   }
+  function workspaceChats(chat: Conversation) {
+    return store
+      .list()
+      .filter(
+        (other) =>
+          other.id === chat.id ||
+          (chat.workspace && other.workspace === chat.workspace) ||
+          (chat.workspace_mode === 'shared' &&
+            other.workspace_mode === 'shared' &&
+            chat.repo &&
+            other.repo === chat.repo),
+      );
+  }
+  function workspaceGitInProgress(chat: Conversation) {
+    return workspaceChats(chat).some((other) => gitOperations.has(other.id));
+  }
   async function execute(
     chat: Conversation,
     runId: string,
@@ -166,7 +183,12 @@ export function createApp(config: Config, routingDependencies: RoutingDependenci
       store.setRun(runId, 'running');
       publish({ type: 'transcript', conversationId: chat.id, runId });
       if (!chat.workspace) {
-        if (chat.repo) {
+        // A shared checkout that already exists is reused instantly: nothing to announce.
+        const reused =
+          chat.repo &&
+          chat.workspace_mode === 'shared' &&
+          existsSync(path.join(sharedWorkspacePath(config, chat.repo), '.git'));
+        if (chat.repo && !reused) {
           const preparing = store.activity(
             chat.id,
             runId,
@@ -416,8 +438,9 @@ export function createApp(config: Config, routingDependencies: RoutingDependenci
       if (active.size >= config.maxRuns) break;
       const chatId = String(row.conversation_id),
         runId = String(row.id);
-      if (active.has(chatId) || gitOperations.has(chatId) || deletingChats.has(chatId)) continue;
+      if (active.has(chatId) || deletingChats.has(chatId)) continue;
       const chat = getChat(chatId);
+      if (workspaceGitInProgress(chat)) continue;
       const message = store.db
         .prepare("SELECT * FROM messages WHERE run_id=? AND role='user'")
         .get(runId)!;
@@ -571,6 +594,7 @@ export function createApp(config: Config, routingDependencies: RoutingDependenci
       pushPublicKey: config.vapidPrivate && config.vapidPublic ? config.vapidPublic : null,
       maxRuns: config.maxRuns,
       unrestricted: config.unrestricted,
+      workspaceMode: config.workspaceMode,
     }),
   );
   function terminalBrowserEnabled() {
@@ -864,6 +888,14 @@ export function createApp(config: Config, routingDependencies: RoutingDependenci
     if (active.has(chatId)) return 'Attendi la fine del task prima di cambiare branch.';
     if (store.queue(chatId).length)
       return 'Ci sono messaggi in coda: inviali o rimuovili prima di cambiare branch.';
+    // A shared checkout has one branch for every chat using it.
+    for (const other of workspaceChats(getChat(chatId))) {
+      if (other.id === chatId) continue;
+      if (active.has(other.id) || gitOperations.has(other.id))
+        return 'Un’altra chat sta lavorando nella stessa cartella condivisa: attendi che finisca.';
+      if (store.queue(other.id).length)
+        return 'Un’altra chat della stessa cartella condivisa ha messaggi in coda.';
+    }
     return null;
   }
   app.get('/api/conversations/:id/git', async (req, res) => {
@@ -873,7 +905,7 @@ export function createApp(config: Config, routingDependencies: RoutingDependenci
   });
   app.get('/api/conversations/:id/diff', async (req, res) => {
     const chat = getChat(String(req.params.id));
-    if (gitOperations.has(chat.id))
+    if (workspaceGitInProgress(chat))
       throw new GitError(409, 'Operazione Git in corso. Aggiorna tra un istante.');
     const input = z
       .object({
@@ -965,8 +997,11 @@ export function createApp(config: Config, routingDependencies: RoutingDependenci
           signal,
         );
         // Preserve chat history; the next turn starts a fresh CLI session and re-reads the files.
-        store.db.prepare('UPDATE conversations SET session_id=NULL WHERE id=?').run(chat.id);
-        store.touch(chat.id);
+        for (const other of workspaceChats(chat)) {
+          store.db.prepare('UPDATE conversations SET session_id=NULL WHERE id=?').run(other.id);
+          store.touch(other.id);
+          if (other.id !== chat.id) publish({ type: 'changed', conversationId: other.id });
+        }
       }
     })();
     try {
@@ -995,7 +1030,13 @@ export function createApp(config: Config, routingDependencies: RoutingDependenci
   app.post('/api/conversations', async (req, res) => {
     const input = chatInput.parse(req.body);
     await checkRouting(input.agent, input.routing);
-    const chat = store.create(input.agent, input.repo || null, input.title, input.tools);
+    const chat = store.create(
+      input.agent,
+      input.repo || null,
+      input.title,
+      input.tools,
+      input.workspaceMode ?? config.workspaceMode,
+    );
     if (input.routing) {
       store.saveRouting(chat.id, input.routing);
       if (input.routing.enabled)
@@ -1173,7 +1214,7 @@ export function createApp(config: Config, routingDependencies: RoutingDependenci
       const images = [...(await prepareImages(imageFiles)), ...prepareDocuments(documentFiles)];
       // Image decoding yields: recheck state before reserving a run.
       chat = getChat(chat.id);
-      if (gitOperations.has(chat.id) || deletingChats.has(chat.id))
+      if (workspaceGitInProgress(chat) || deletingChats.has(chat.id))
         throw new GitError(
           409,
           'Operazione Git in corso. Riprova al termine; la bozza è conservata.',
