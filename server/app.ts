@@ -38,7 +38,7 @@ import { Store, type Conversation, type Message } from './store';
 import { AudioService } from './audio';
 import { GitHubService } from './github';
 import { AudioModels, audioSettingsSchema } from './audio-settings';
-import { prepareWorkspace, runAgent } from './runner';
+import { prepareWorkspace, runAgent, sharedWorkspacePath } from './runner';
 import { splitVoice } from './protocol';
 import { McpService, McpError } from './mcp';
 import { BrowserService, BrowserError } from './browser';
@@ -167,7 +167,12 @@ export function createApp(config: Config, routingDependencies: RoutingDependenci
       store.setRun(runId, 'running');
       publish({ type: 'transcript', conversationId: chat.id, runId });
       if (!chat.workspace) {
-        if (chat.repo) {
+        // A shared checkout that already exists is reused instantly: nothing to announce.
+        const reused =
+          chat.repo &&
+          chat.workspace_mode === 'shared' &&
+          existsSync(path.join(sharedWorkspacePath(config, chat.repo), '.git'));
+        if (chat.repo && !reused) {
           const preparing = store.activity(
             chat.id,
             runId,
