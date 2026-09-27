@@ -771,26 +771,69 @@ button svg {
   flex-shrink: 0;
 }
 .activity {
-  color: #9e9e9e;
-  font-size: 11px;
+  color: var(--muted);
+  font-size: 13px;
   margin: 22px 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
 }
-.activity summary {
-  cursor: pointer;
+.activity-toggle {
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 6px 0;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  text-align: left;
+  color: inherit;
 }
-.activity > div {
+.activity-count {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+.activity-toggle[aria-expanded='true'] > svg {
+  transform: rotate(180deg);
+}
+.activity-list {
+  max-height: min(34dvh, 280px);
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  overflow-anchor: none;
+  border-top: 1px solid var(--border);
+  scrollbar-width: thin;
+}
+.activity-list ol {
+  list-style: none;
+  margin: 0;
+  padding: 4px 12px;
+}
+.activity-list li {
   display: flex;
   gap: 8px;
-  align-items: center;
-  padding: 7px 0;
+  align-items: baseline;
+  padding: 9px 0;
+  line-height: 1.5;
+}
+.activity-list li > svg {
+  flex-shrink: 0;
+  align-self: flex-start;
+  margin-top: 3px;
+}
+.activity-list li > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .activity time {
   margin-left: auto;
-  font-size: 9px;
+  font-size: 11px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.activity-close {
+  width: 100%;
+  min-height: 44px;
+  border-top: 1px solid var(--border);
+  color: inherit;
 }
 .banner {
   margin: 12px 28px 0;

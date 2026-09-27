@@ -9,6 +9,7 @@ import { SearchResults } from './SearchResults';
 import { ImageAttachments } from './ImageAttachments';
 import { ModelPicker } from './ModelPicker';
 import { AgentLogo } from './AgentLogo';
+import { ActivityPanel } from './ActivityPanel';
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import Markdown from 'react-markdown';
@@ -18,7 +19,6 @@ import {
   AudioLines,
   Bell,
   Check,
-  ChevronDown,
   ChevronLeft,
   CircleHelp,
   FolderGit2,
@@ -62,6 +62,7 @@ const agentName = (agent?: string) => (agent === 'codex' ? 'Codex' : 'Claude Cod
 const MarkdownReader = React.lazy(() => import('./MarkdownReader'));
 function App() {
   const [markdownDocument, setMarkdownDocument] = useState<MarkdownDocument>();
+  const [activityOpen, setActivityOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(
     new URLSearchParams(location.search).get('settings') === 'notifications',
   );
@@ -475,7 +476,10 @@ function App() {
     updateAppBadge(chats.reduce((sum, chat) => sum + (chat.unread_count || 0), 0));
   }, [chats]);
   useEffect(() => {
-    if (!jumpPending.current && !markdownDocument)
+    setActivityOpen(false);
+  }, [selected]);
+  useEffect(() => {
+    if (!jumpPending.current && !markdownDocument && !activityOpen)
       bottom.current?.scrollIntoView({ behavior: 'smooth' });
   }, [current?.messages.length, preview]);
   useEffect(() => {
@@ -1162,23 +1166,12 @@ function App() {
                 </div>
               )}
               {!!current.activity.length && (
-                <details className="activity">
-                  <summary>
-                    Attività del lavoro <ChevronDown size={14} />
-                  </summary>
-                  {current.activity.map((a) => (
-                    <div key={a.id}>
-                      <Check size={12} />
-                      <span>{a.text}</span>
-                      <time>
-                        {new Date(a.created_at).toLocaleTimeString('it-IT', {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
-                      </time>
-                    </div>
-                  ))}
-                </details>
+                <ActivityPanel
+                  key={current.id}
+                  activity={current.activity}
+                  open={activityOpen}
+                  onOpenChange={setActivityOpen}
+                />
               )}
               <div ref={bottom} />
             </div>
