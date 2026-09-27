@@ -2,6 +2,7 @@ import { defaultEffort, effortLevels, type Effort } from '../server/agent-effort
 import { useEffect, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { api, type Chat } from './api';
+import { AgentLogo } from './AgentLogo';
 
 export function ModelPicker({ chat, onSaved }: { chat: Chat; onSaved(): Promise<void> }) {
   const [catalog, setCatalog] = useState<{
@@ -56,9 +57,7 @@ export function ModelPicker({ chat, onSaved }: { chat: Chat; onSaved(): Promise<
   return (
     <details className="model-picker">
       <summary>
-        <span className={`agent-symbol ${chat.agent}`} aria-hidden="true">
-          {chat.agent === 'claude' ? '✳' : '⌘'}
-        </span>
+        <AgentLogo agent={chat.agent} />
         <span className="model-picker-current">
           <span className="model-picker-agent">
             {chat.agent === 'claude' ? 'Claude Code' : 'Codex'}

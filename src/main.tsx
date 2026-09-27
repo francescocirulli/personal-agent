@@ -5,6 +5,7 @@ import { QueuePanel } from './QueuePanel';
 import { SearchResults } from './SearchResults';
 import { ImageAttachments } from './ImageAttachments';
 import { ModelPicker } from './ModelPicker';
+import { AgentLogo } from './AgentLogo';
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import Markdown from 'react-markdown';
@@ -916,9 +917,7 @@ function App() {
                     {message.role === 'user' ? (
                       <span className="mini-avatar">TU</span>
                     ) : (
-                      <span className={`agent-symbol ${current.agent}`}>
-                        {current.agent === 'claude' ? '✳' : '⌘'}
-                      </span>
+                      <AgentLogo agent={current.agent} />
                     )}
                     <strong>{message.role === 'user' ? 'Tu' : agentName(current.agent)}</strong>
                     <time>
@@ -1451,7 +1450,7 @@ function App() {
                     className={agent === a ? 'chosen' : ''}
                     onClick={() => setAgent(a)}
                   >
-                    <span className={`agent-symbol ${a}`}>{a === 'claude' ? '✳' : '⌘'}</span>
+                    <AgentLogo agent={a} />
                     <strong>{agentName(a)}</strong>
                     {agent === a && <Check size={16} />}
                   </button>

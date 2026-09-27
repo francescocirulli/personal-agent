@@ -447,18 +447,11 @@ button svg {
   text-overflow: ellipsis;
 }
 .agent-symbol {
-  font-size: 20px;
-  line-height: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  display: block;
+  flex-shrink: 0;
   width: 22px;
   height: 22px;
-  color: #bc7d5d;
-}
-.agent-symbol.codex {
-  color: #606060;
-  font-size: 19px;
+  object-fit: contain;
 }
 .messages {
   flex: 1;
@@ -1430,9 +1423,6 @@ button svg {
 }
 .primary:hover {
   background: #ffffff;
-}
-.agent-symbol.codex {
-  color: #cdcdcd;
 }
 .message-body {
   color: #dedede;
