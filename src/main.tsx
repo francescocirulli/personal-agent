@@ -12,7 +12,7 @@ import { AgentLogo } from './AgentLogo';
 import { ActivityPanel } from './ActivityPanel';
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import Markdown from 'react-markdown';
+import { ChatMarkdown } from './ChatMarkdown';
 import {
   ArrowUp,
   Paperclip,
@@ -1082,13 +1082,7 @@ function App() {
                     files={(message.attachments || []).filter((file) => file.mime !== 'image/jpeg')}
                   />
                   <div className="message-body">
-                    <Markdown
-                      components={{
-                        a: (props) => <a {...props} target="_blank" rel="noreferrer" />,
-                      }}
-                    >
-                      {message.text}
-                    </Markdown>
+                    <ChatMarkdown text={message.text} />
                   </div>
                   {message.role === 'assistant' && (
                     <div className="message-actions">
@@ -1143,7 +1137,7 @@ function App() {
                   </div>
                   {preview && (
                     <div className="preview">
-                      <Markdown>{preview}</Markdown>
+                      <ChatMarkdown text={preview} />
                     </div>
                   )}
                   <p>Puoi cambiare chat. Il lavoro continua.</p>
