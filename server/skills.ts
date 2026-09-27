@@ -4,6 +4,7 @@ import path from 'node:path';
 import { parse } from 'yaml';
 import { z } from 'zod';
 import type { Store, Conversation } from './store';
+import { skillAvailability } from './chat-tools';
 
 export type SkillAgent = 'claude' | 'codex';
 export interface SkillView {
@@ -200,10 +201,7 @@ export class SkillService {
   async access(chat: Conversation, runId: string) {
     const project = await this.project(chat);
     const selected = this.globals().filter(
-      (s) =>
-        s.enabled !== false &&
-        s.agents.includes(chat.agent) &&
-        (chat.tools?.skills == null || chat.tools.skills.includes(s.id)),
+      (s) => skillAvailability(s, chat.agent, chat.tools?.skills).available,
     );
     const directory = path.join(this.dataDir, 'skill-runs', runId);
     const catalog: { name: string; description: string; scope: string; path: string }[] = [];

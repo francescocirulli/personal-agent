@@ -81,6 +81,10 @@ In **Nuova chat → MCP e skill per questa chat** puoi mantenere **Usa disponibi
 
 L’eredità globale include anche i servizi e le skill abilitati in futuro; una selezione personalizzata conserva solo gli elementi scelti. Le disattivazioni in Impostazioni hanno sempre precedenza: una chat non può riabilitare un elemento disabilitato globalmente. Le skill devono inoltre essere assegnate all’agente scelto, e gli MCP devono essere collegati. Le skill del repository e il browser integrato mantengono la loro disponibilità.
 
+Nelle chat già create, il pulsante **MCP e skill della chat** mostra i conteggi effettivi e apre il riepilogo: MCP disponibili, skill globali, skill del repository e strumenti esclusi con il motivo. Contatori e avvisi di login riguardano solo la chat selezionata: un servizio collegato globalmente ma escluso dalla chat non viene contato e non genera avvisi. I servizi disabilitati globalmente non vengono contati neanche nel riepilogo globale.
+
+Il riepilogo indica la disponibilità per il prossimo messaggio, non lo storico delle chiamate effettuate dall’agente. Si aggiorna al cambio chat, agli eventi delle impostazioni e del lavoro, al ritorno nella finestra e con **Aggiorna elenco**. Gli errori di caricamento sono espliciti e non mostrano conteggi globali o rimasti dalla chat precedente. Le skill del repository ancora da rilevare vengono segnalate; il browser integrato resta disponibile separatamente dal conteggio MCP. I pulsanti **Gestisci MCP globali** e **Gestisci skill globali** aprono le impostazioni dell’app.
+
 Le scelte si salvano con la chat e vengono copiate nei fork. Le chat precedenti continuano a ereditare le disponibilità globali. Chiudendo e riaprendo Nuova chat si riparte dalle impostazioni globali. La selezione riguarda gli strumenti gestiti dall’app, non quelli installati direttamente nelle CLI.
 
 ## Browser interattivo degli agenti

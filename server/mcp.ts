@@ -16,6 +16,7 @@ import type {
 } from '@modelcontextprotocol/sdk/shared/auth.js';
 import { z } from 'zod';
 import type { Config } from './config';
+import { mcpAvailability } from './chat-tools';
 
 export class McpError extends Error {
   constructor(
@@ -506,12 +507,7 @@ export class McpService {
       PA_MCP_REQUEST_SCRIPT: path.resolve('server/mcp-request.mjs'),
     };
     const servers = [...this.connections.values()]
-      .filter(
-        (c) =>
-          c.status === 'connected' &&
-          c.enabled !== false &&
-          (selected === null || selected.includes(c.id)),
-      )
+      .filter((c) => mcpAvailability(this.view(c), selected).available)
       .map((c) => {
         const tokenVariable = `PA_MCP_${c.id.replaceAll('-', '_')}`;
         grant.allowed.add(c.id);

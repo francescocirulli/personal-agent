@@ -11,6 +11,7 @@ export function McpConnections({
   onSkillsSettings,
   onTerminalSettings,
   beforeOpen,
+  showSummary = true,
 }: {
   open: boolean;
   onOpen(): void;
@@ -19,6 +20,7 @@ export function McpConnections({
   onSkillsSettings(): void;
   onTerminalSettings(): void;
   beforeOpen(): void;
+  showSummary?: boolean;
 }) {
   const [connections, setConnections] = useState<McpView[]>([]);
   const [name, setName] = useState(''),
@@ -74,8 +76,12 @@ export function McpConnections({
     beforeOpen();
     onOpen();
   }
-  const waiting = connections.filter((c) => c.status === 'authorization_required');
-  const connected = connections.filter((c) => c.status === 'connected').length;
+  const waiting = connections.filter(
+    (c) => c.enabled !== false && c.status === 'authorization_required',
+  );
+  const connected = connections.filter(
+    (c) => c.enabled !== false && c.status === 'connected',
+  ).length;
   function loginLink(c: McpView) {
     return (
       c.authorizationUrl && (
@@ -93,17 +99,20 @@ export function McpConnections({
   }
   return (
     <>
-      <div className="mcp-strip">
-        <button className="text-button" onClick={show}>
-          <Plug size={16} /> Collegamenti MCP{connected > 0 ? ` · ${connected} collegati` : ''}
-        </button>
-        {connections.some((c) => c.status === 'error') && (
+      {showSummary && (
+        <div className="mcp-strip">
           <button className="text-button" onClick={show}>
-            Accesso da verificare
+            <Plug size={16} /> Collegamenti MCP{connected > 0 ? ` · ${connected} collegati` : ''}
           </button>
-        )}
-      </div>
-      {!open &&
+          {connections.some((c) => c.enabled !== false && c.status === 'error') && (
+            <button className="text-button" onClick={show}>
+              Accesso da verificare
+            </button>
+          )}
+        </div>
+      )}
+      {showSummary &&
+        !open &&
         waiting.map((c) => (
           <div className="banner notice mcp-pending" key={c.id} role="status">
             <span>

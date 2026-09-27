@@ -388,6 +388,8 @@ Migrazione automatica del file esistente: il vecchio `conversationId` diventa so
 
 `POST /api/mcp/:connectionId/enabled` e `POST /api/skills/:id/enabled` gestiscono i flag globali senza eliminare dati. Le skill conservano anche le assegnazioni per agente. I flag mancanti nei dati preesistenti equivalgono ad abilitato. Gli snapshot delle skill attive restano immutabili; la disabilitazione MCP blocca invece le nuove chiamate anche da grant già rilasciati, senza annullare una richiesta upstream già partita. L’helper MCP distingue disponibilità globale (`enabled`) e selezione della chat (`selectedForChat`).
 
+`GET /api/conversations/:id/tools` restituisce selezione salvata, disponibilità e motivi di esclusione per MCP/skill globali, oltre alla discovery delle skill del progetto. Le funzioni `mcpAvailability` e `skillAvailability` sono condivise dal riepilogo e dai servizi che preparano gli strumenti del turno. `ChatToolsPanel` mostra dati della sola chat corrente, invalida risposte fuori ordine o di componenti smontati e non ripiega sui cataloghi globali in caso di errore. Il riepilogo globale di `McpConnections` resta visibile solo quando non è selezionata una chat; le sue finestre di gestione rimangono globali. Avvisi OAuth ed errori della chat sono limitati a MCP selezionati e abilitati globalmente.
+
 I filtri riguardano i cataloghi dell’app; skill del repository, browser integrato e configurazioni native delle CLI mantengono il comportamento precedente. Le prove in `tests/chat-tools.test.ts` coprono filtri, persistenza, fork, eredità e revoca del grant; `tests/browser/chat-tools.spec.ts` copre selezione, cambio agente, reset e disabilitazione globale.
 
 ### Browser condiviso come capacità, sessioni separate per chat

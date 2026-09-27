@@ -8,7 +8,12 @@ import {
   type ChatFile,
 } from './files';
 import { effortLevels } from './agent-effort';
-import { chatToolsInput } from './chat-tools';
+import {
+  chatToolsInput,
+  mcpAvailability,
+  skillAvailability,
+  type ChatToolsView,
+} from './chat-tools';
 import { prepareImages, ImageError, type ChatImage } from './images';
 import { agentModels, modelSchema } from './agent-models';
 import express, { type Request, type Response, type NextFunction } from 'express';
@@ -548,6 +553,21 @@ export function createApp(config: Config) {
   app.get('/api/conversations/:id/skills', async (req, res) =>
     res.json(await skills.project(getChat(String(req.params.id)))),
   );
+  app.get('/api/conversations/:id/tools', async (req, res) => {
+    const chat = getChat(String(req.params.id));
+    const project = await skills.project(chat);
+    const selection = chat.tools ?? { mcp: null, skills: null };
+    const view: ChatToolsView = {
+      conversationId: chat.id,
+      selection,
+      mcp: mcp.list().map((item) => ({ ...item, ...mcpAvailability(item, selection.mcp) })),
+      skills: skills
+        .list()
+        .map((item) => ({ ...item, ...skillAvailability(item, chat.agent, selection.skills) })),
+      project,
+    };
+    res.json(view);
+  });
   app.get('/api/conversations/:id/skills/file', async (req, res) =>
     res.json(
       await skills.projectContent(

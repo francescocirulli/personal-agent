@@ -117,6 +117,17 @@ test('API stores chat tools; MCP grants exclude unselected/disabled connections 
     const custom = runtime.mcp.access(chat.id, chat.tools.mcp);
     assert.equal(custom.servers.length, 1);
     assert.equal(custom.servers[0].name, 'pa_fixture-0');
+    const summary = () => request(`/conversations/${chat.id}/tools`).then((r) => r.json());
+    let view = await summary();
+    assert.equal(view.conversationId, chat.id);
+    assert.deepEqual(view.selection, chat.tools);
+    assert.deepEqual(
+      view.mcp.filter((item: any) => item.available).map((item: any) => `pa_${item.name}`),
+      custom.servers.map((item) => item.name),
+    );
+    assert.equal(view.mcp[1].reason, 'Escluso da questa chat');
+    assert.doesNotMatch(JSON.stringify(view), /old-secret|access_token|code_verifier/);
+    assert.equal((await request(`/conversations/${randomUUID()}/tools`)).status, 404);
     assert.equal(runtime.mcp.access('empty', []).servers.length, 0);
     assert.equal(runtime.mcp.access('inherited').servers.length, 2);
     const bearer = custom.env[custom.servers[0].tokenVariable];
@@ -138,6 +149,10 @@ test('API stores chat tools; MCP grants exclude unselected/disabled connections 
     assert.equal((await request(`/mcp/${ids[0]}/enabled`, { enabled: false })).status, 200);
     assert.equal(runtime.mcp.access('custom-disabled', [ids[0]]).servers.length, 0);
     assert.equal(runtime.mcp.access('global-disabled').servers.length, 1);
+    view = await summary();
+    assert.equal(view.mcp.filter((item: any) => item.available).length, 0);
+    assert.equal(view.mcp[0].selected, true);
+    assert.equal(view.mcp[0].reason, 'Disabilitato globalmente');
     assert.equal((await gateway(ids[0])).status, 403);
     await request(`/mcp/${ids[0]}/enabled`, { enabled: true });
     assert.equal(runtime.mcp.access('restored', [ids[0]]).servers.length, 1);
@@ -149,6 +164,42 @@ test('API stores chat tools; MCP grants exclude unselected/disabled connections 
     assert.equal((await request(`/skills/${skill.id}/enabled`, { enabled: false })).status, 200);
     assert.equal((await (await request(`/skills/${skill.id}`)).json()).enabled, false);
     assert.equal((await request(`/skills/${randomUUID()}/enabled`, { enabled: true })).status, 404);
+    const otherSkill = runtime.skills.save({ content: content('solo-claude'), agents: ['claude'] });
+    view = await summary();
+    assert.ok(view.skills.every((item: any) => !item.available && !item.selected));
+    const inherited = runtime.store.create('codex', 'example/project', 'Con progetto');
+    const workspace = path.join(dir, 'workspace');
+    const folder = path.join(workspace, '.claude/skills/progetto');
+    await mkdir(folder, { recursive: true });
+    await writeFile(path.join(folder, 'SKILL.md'), content('progetto'));
+    runtime.store.db
+      .prepare('UPDATE conversations SET workspace=? WHERE id=?')
+      .run(workspace, inherited.id);
+    const inheritedView = await (await request(`/conversations/${inherited.id}/tools`)).json();
+    assert.equal(
+      inheritedView.skills.find((item: any) => item.id === skill.id).reason,
+      'Disabilitata globalmente',
+    );
+    assert.equal(
+      inheritedView.skills.find((item: any) => item.id === otherSkill.id).reason,
+      'Non abilitata per questo agente',
+    );
+    assert.equal(inheritedView.mcp.filter((item: any) => item.available).length, 2);
+    assert.equal(inheritedView.project.ready, true);
+    assert.deepEqual(
+      inheritedView.project.skills.map((item: any) => item.name),
+      ['progetto'],
+    );
+    const projectAccess = await runtime.skills.access(
+      runtime.store.conversation(inherited.id)!,
+      randomUUID(),
+    );
+    try {
+      assert.match(projectAccess.instructions, /"name":"progetto"/);
+      assert.doesNotMatch(projectAccess.instructions, /"name":"globale"|"name":"solo-claude"/);
+    } finally {
+      await projectAccess.release();
+    }
   } finally {
     await runtime.close();
     await new Promise<void>((resolve) => server.close(() => resolve()));

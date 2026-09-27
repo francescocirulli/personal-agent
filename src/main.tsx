@@ -56,6 +56,7 @@ import { RepositoryPicker } from './RepositoryPicker';
 import { McpConnections } from './McpConnections';
 import { SkillsSettings } from './SkillsSettings';
 import { ChatToolsPicker } from './ChatToolsPicker';
+import { ChatToolsPanel } from './ChatToolsPanel';
 import type { ChatTools } from '../server/chat-tools';
 const TerminalSettings = React.lazy(() => import('./TerminalSettings'));
 import { BrowserPanel } from './BrowserPanel';
@@ -335,14 +336,17 @@ function App() {
     stream.onerror = () => setConnected(false);
     stream.addEventListener('sync', () => {
       void refresh().catch((e) => setError(e.message));
+      window.dispatchEvent(new Event('chat-tools-change'));
     });
     stream.onmessage = (event) => {
       const e = JSON.parse(event.data);
       if (
         e.conversationId === selection.current &&
         ['changed', 'done', 'run_error', 'started'].includes(e.type)
-      )
+      ) {
         window.dispatchEvent(new Event('git-change'));
+        window.dispatchEvent(new Event('chat-tools-change'));
+      }
       if (e.type === 'browser_changed') {
         window.dispatchEvent(new Event('browser-change'));
         return;
@@ -1002,6 +1006,7 @@ function App() {
           </div>
         )}
         <McpConnections
+          showSummary={!selected}
           open={preferencesOpen && preferencesTab === 'mcp'}
           onOpen={() => void openPreferences('mcp')}
           onClose={() => setPreferencesOpen(false)}
@@ -1010,6 +1015,14 @@ function App() {
           onTerminalSettings={() => void openPreferences('terminal')}
           beforeOpen={stopVoice}
         />
+        {current && !preferencesOpen && (
+          <ChatToolsPanel
+            key={current.id}
+            chat={current}
+            beforeOpen={stopVoice}
+            onGlobalSettings={(tab) => void openPreferences(tab)}
+          />
+        )}
         {!selected ? (
           <section className="welcome">
             <div className="eyebrow">

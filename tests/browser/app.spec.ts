@@ -536,10 +536,30 @@ test('MCP on mobile: login link, automatic completion and manual return stay out
     } else if (pathname.endsWith('/delete')) entries = [];
     return route.fulfill({ json: entries[0] || { ok: true } });
   });
+  await page.route('**/api/conversations/*/tools', (route) =>
+    route.fulfill({
+      json: {
+        conversationId: new URL(route.request().url()).pathname.split('/')[3],
+        selection: { mcp: null, skills: null },
+        mcp: entries.map((item) => ({
+          ...item,
+          selected: true,
+          available: item.status === 'connected',
+          reason: item.status === 'connected' ? null : 'Accesso richiesto',
+        })),
+        skills: [],
+        project: { skills: [], warnings: [], ready: false },
+      },
+    }),
+  );
+  const openMcpSettings = async () => {
+    await page.getByRole('button', { name: /^MCP e skill della chat/ }).click();
+    await page.getByRole('button', { name: 'Gestisci MCP globali', exact: true }).click();
+  };
   await page.goto('/');
   await page.getByRole('button', { name: 'Inizia una conversazione' }).click();
   await page.getByRole('button', { name: 'Crea chat' }).click();
-  await page.getByRole('button', { name: 'Collegamenti MCP', exact: true }).click();
+  await openMcpSettings();
   const dialog = page.getByRole('dialog', { name: 'Collegamenti MCP' });
   await dialog.getByLabel('Nome del collegamento').fill('notion');
   await dialog.getByLabel('Indirizzo del server MCP').fill('https://mcp.example.test/mcp');
@@ -557,7 +577,9 @@ test('MCP on mobile: login link, automatic completion and manual return stay out
   // Completing OAuth in the external browser updates the open PWA via SSE/focus.
   entries[0] = { ...entries[0], status: 'connected', authorizationUrl: undefined };
   await page.evaluate(() => window.dispatchEvent(new Event('mcp-change')));
-  await expect(page.getByRole('button', { name: 'Collegamenti MCP · 1 collegati' })).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'MCP e skill della chat · 1 MCP · 0 skill' }),
+  ).toBeVisible();
   await expect(page.getByRole('link', { name: 'Accedi al servizio notion' })).toHaveCount(0);
   entries[0] = {
     ...entries[0],
@@ -565,7 +587,7 @@ test('MCP on mobile: login link, automatic completion and manual return stay out
     error: 'Il servizio rifiuta il ritorno automatico.',
   };
   await page.evaluate(() => window.dispatchEvent(new Event('mcp-change')));
-  await page.getByRole('button', { name: 'Collegamenti MCP', exact: true }).click();
+  await openMcpSettings();
   await dialog.getByText('Usa copia e incolla', { exact: true }).click();
   await dialog.getByRole('button', { name: 'Avvia login manuale', exact: true }).click();
   const callback = 'http://localhost:4319/callback?code=private-test-code&state=manual-test';
@@ -581,7 +603,7 @@ test('MCP on mobile: login link, automatic completion and manual return stay out
   await expect(page.locator('.messages')).not.toContainText('private-test-code');
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
   await page.reload();
-  await page.getByRole('button', { name: 'Collegamenti MCP · 1 collegati' }).click();
+  await openMcpSettings();
   await dialog.getByRole('button', { name: 'Scollega notion' }).click();
   await dialog.getByRole('button', { name: 'Scollega da tutte le chat', exact: true }).click();
   await expect(
