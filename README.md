@@ -137,7 +137,7 @@ docker compose exec app gh auth status
 
 Alternatively, set `GH_TOKEN` in `.env` with access limited to the repositories and operations you need, then recreate the container. The entrypoint configures Git's credential helper when `GH_TOKEN` is present. Without a token, run `gh auth setup-git` yourself as shown above. Git identity and stored CLI logins persist under `/data/home`.
 
-Select a GitHub repository when creating a chat, or use a chat without a repository. Agents can modify and push to repositories according to your instructions and the credential's permissions.
+Select a GitHub repository when creating a chat, or use a chat without a repository. Repository chats use one of two workspace modes, chosen when the chat is created. **Isolated** (the default) clones the repository for that chat and creates an `agent/…` branch. **Shared** reuses one persistent checkout per repository under `DATA_DIR/repos/`: only the first chat clones, later chats start immediately and work on whatever branch and local changes the checkout has. Shared chats can run at the same time in the same files, so use it for quick, short conversations or repositories with their own coordination rules; branch changes wait until no other chat is using the checkout. Agents can modify and push to repositories according to your instructions and the credential's permissions.
 
 ### 7. Enable optional services
 
@@ -206,6 +206,7 @@ Environment variables are read at server startup. Restart local development or r
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | Empty                                       | Optional persistent Web Push key pair.                                                        |
 | `VAPID_SUBJECT`                          | `mailto:admin@example.com`                  | Replace with your operator contact; the example env uses `you@example.com`.                   |
 | `BROWSER_NO_SANDBOX`                     | Unset                                       | Image sets `true` for container Chromium; leave unset in ordinary host development.           |
+| `WORKSPACE_MODE`                         | `isolated`                                  | Default for repository chats: `isolated` clones per chat, `shared` reuses one checkout.       |
 
 ## Persistence, backups, and updates
 
