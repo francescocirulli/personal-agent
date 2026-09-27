@@ -1,7 +1,8 @@
 import { defaultEffort } from './agent-effort';
 import type { ChatImage } from './images';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdir, mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { mkdir, mkdtemp, rename, writeFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -185,9 +186,50 @@ export async function runProcess(
     });
   });
 }
+// Serialize first clones of a shared checkout: parallel chats must wait for the same clone.
+const sharedClones = new Map<string, Promise<string>>();
+export function sharedWorkspacePath(config: Pick<Config, 'dataDir'>, repo: string) {
+  const [owner, name] = repo.split('/');
+  return path.join(config.dataDir, 'repos', owner, name);
+}
+async function prepareSharedWorkspace(config: Config, repo: string, signal: AbortSignal) {
+  const workspace = sharedWorkspacePath(config, repo);
+  if (existsSync(path.join(workspace, '.git'))) return workspace;
+  const pending = sharedClones.get(workspace);
+  if (pending) return pending;
+  const clone = (async () => {
+    await mkdir(path.dirname(workspace), { recursive: true });
+    // Clone beside the target and rename, so a failed clone never leaves a half checkout in place.
+    const staging = await mkdtemp(`${workspace}.clone-`);
+    try {
+      await runProcess(
+        'git',
+        ['clone', '--', `https://github.com/${repo}.git`, staging],
+        config.dataDir,
+        signal,
+        '',
+        () => {},
+      );
+      await rename(staging, workspace);
+    } catch (e) {
+      await rm(staging, { recursive: true, force: true });
+      throw e;
+    }
+    return workspace;
+  })();
+  sharedClones.set(workspace, clone);
+  try {
+    return await clone;
+  } finally {
+    sharedClones.delete(workspace);
+  }
+}
 export async function prepareWorkspace(config: Config, chat: Conversation, signal: AbortSignal) {
   const workspace = path.join(config.dataDir, 'workspaces', chat.id);
   if (chat.workspace) return chat.workspace;
+  // No agent branch here: shared chats work wherever the checkout currently is, like terminal sessions.
+  if (chat.repo && chat.workspace_mode === 'shared')
+    return prepareSharedWorkspace(config, chat.repo, signal);
   await mkdir(path.dirname(workspace), { recursive: true });
   if (chat.repo) {
     // Independent clones avoid both file and shared-index interference. Never accept arbitrary git flags/URLs.

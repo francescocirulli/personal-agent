@@ -65,6 +65,7 @@ const chatInput = z.object({
     .nullable()
     .optional(),
   title: z.string().trim().min(1).max(100).default('Nuova conversazione'),
+  workspaceMode: z.enum(['isolated', 'shared']).optional(),
 });
 export function createApp(config: Config, routingDependencies: RoutingDependencies = {}) {
   const github = new GitHubService(config.demo);
@@ -571,6 +572,7 @@ export function createApp(config: Config, routingDependencies: RoutingDependenci
       pushPublicKey: config.vapidPrivate && config.vapidPublic ? config.vapidPublic : null,
       maxRuns: config.maxRuns,
       unrestricted: config.unrestricted,
+      workspaceMode: config.workspaceMode,
     }),
   );
   function terminalBrowserEnabled() {
@@ -864,6 +866,16 @@ export function createApp(config: Config, routingDependencies: RoutingDependenci
     if (active.has(chatId)) return 'Attendi la fine del task prima di cambiare branch.';
     if (store.queue(chatId).length)
       return 'Ci sono messaggi in coda: inviali o rimuovili prima di cambiare branch.';
+    // A shared checkout has one branch for every chat using it.
+    const chat = store.conversation(chatId);
+    if (chat?.workspace_mode === 'shared' && chat.workspace)
+      for (const other of store.list())
+        if (other.id !== chatId && other.workspace === chat.workspace) {
+          if (active.has(other.id) || gitOperations.has(other.id))
+            return 'Un’altra chat sta lavorando nella stessa cartella condivisa: attendi che finisca.';
+          if (store.queue(other.id).length)
+            return 'Un’altra chat della stessa cartella condivisa ha messaggi in coda.';
+        }
     return null;
   }
   app.get('/api/conversations/:id/git', async (req, res) => {
@@ -995,7 +1007,13 @@ export function createApp(config: Config, routingDependencies: RoutingDependenci
   app.post('/api/conversations', async (req, res) => {
     const input = chatInput.parse(req.body);
     await checkRouting(input.agent, input.routing);
-    const chat = store.create(input.agent, input.repo || null, input.title, input.tools);
+    const chat = store.create(
+      input.agent,
+      input.repo || null,
+      input.title,
+      input.tools,
+      input.workspaceMode ?? config.workspaceMode,
+    );
     if (input.routing) {
       store.saveRouting(chat.id, input.routing);
       if (input.routing.enabled)

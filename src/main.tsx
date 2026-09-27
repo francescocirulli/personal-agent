@@ -53,10 +53,11 @@ import {
   type Settings,
   type AudioSettings,
   type AudioCatalog,
+  type WorkspaceMode,
 } from './api';
 import { HandsFree, Speaker, type PlaybackState } from './voice';
 import './style.css';
-import { RepositoryPicker } from './RepositoryPicker';
+import { RepositoryPicker, WorkspaceModePicker } from './RepositoryPicker';
 import { McpConnections } from './McpConnections';
 import { SkillsSettings } from './SkillsSettings';
 import { ChatToolsPicker } from './ChatToolsPicker';
@@ -88,7 +89,8 @@ function App() {
   const [sidebar, setSidebar] = useState(false),
     [create, setCreate] = useState(false),
     [agent, setAgent] = useState<'claude' | 'codex'>('claude'),
-    [repo, setRepo] = useState('');
+    [repo, setRepo] = useState(''),
+    [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>();
   const { draft, setDraft, images, setImages, draftReady, draftError } = useDraft(selected);
   const [targetMessage, setTargetMessage] = useState<string | null>(
     new URLSearchParams(location.search).get('message'),
@@ -559,11 +561,13 @@ function App() {
       const chat = await api<Chat>('/conversations', {
         agent,
         repo: repo.trim() || null,
+        ...(repo.trim() && workspaceMode ? { workspaceMode } : {}),
         tools: chatTools,
         routing: agent === 'codex' ? chatRouting : null,
       });
       setCreate(false);
       setRepo('');
+      setWorkspaceMode(undefined);
       choose(chat.id);
     } catch (e) {
       setError((e as Error).message);
@@ -1702,6 +1706,12 @@ function App() {
                   setRepoRequired(required);
                 }}
               />
+              {repoRequired && (
+                <WorkspaceModePicker
+                  value={workspaceMode ?? settings?.workspaceMode ?? 'isolated'}
+                  onChange={setWorkspaceMode}
+                />
+              )}
               <ChatToolsPicker
                 agent={agent}
                 value={chatTools}
