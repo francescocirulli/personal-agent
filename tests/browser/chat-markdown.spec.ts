@@ -187,7 +187,7 @@ test('streaming previews use the same table and code formatting as saved replies
     const work = page.getByRole('region', { name: 'Stato del lavoro' });
     await expect(work).toHaveCount(1);
     await expect(work).toContainText('Ultima attività: Verifica dei file in corso');
-    await expect(page.getByText('Puoi cambiare chat. Il lavoro continua.')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Ferma task', exact: true })).toBeVisible();
     for (const text of ['| Funzione | Stato |\n| --- | --- |\n| Lettura | In', content]) {
       await page.evaluate(
         ({ id, text }) => {

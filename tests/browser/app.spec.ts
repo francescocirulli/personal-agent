@@ -100,7 +100,7 @@ test('mobile chat, background task, history, voice view and text fallback', asyn
     .getByRole('textbox', { name: 'Messaggio', exact: true })
     .fill('Proviamo il lavoro asincrono');
   await page.getByRole('button', { name: 'Invia messaggio' }).click();
-  await expect(page.getByText('Puoi cambiare chat. Il lavoro continua.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Ferma task', exact: true })).toBeVisible();
   await page.reload();
   await expect(page.getByText('Questa è una', { exact: false }).first()).toBeVisible();
   await expect(page.getByRole('button', { name: 'Ascolta', exact: true })).toBeVisible();

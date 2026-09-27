@@ -34,7 +34,10 @@ for (const width of [320, 390]) {
       await page.goto(`/?chat=${chat.id}`);
       const card = page.getByRole('region', { name: 'Stato del lavoro' });
       await expect(card.getByRole('button', { name: 'Apri modifiche (2)' })).toBeVisible();
-      await expect(card).toContainText('Modifiche locali');
+      await expect(card.getByRole('button', { name: 'Apri modifiche (2)' })).toHaveAttribute(
+        'title',
+        'Modifiche locali',
+      );
       const trigger = page.getByRole('button', { name: 'Modifiche della chat', exact: true });
       await trigger.click();
       const sheet = page.getByRole('dialog', { name: 'Modifiche della chat' });
@@ -101,7 +104,10 @@ for (const width of [320, 390]) {
       await page.keyboard.press('Escape');
       await expect(sheet).toHaveCount(0);
       await page.evaluate(() => window.dispatchEvent(new Event('git-change')));
-      await expect(card).toContainText('Confronto con main');
+      await expect(card.getByRole('button', { name: 'Apri modifiche (2)' })).toHaveAttribute(
+        'title',
+        'Confronto con main',
+      );
       await card.getByRole('button', { name: 'Apri modifiche (2)' }).click();
       await expect(
         sheet.getByRole('button', { name: 'Confronto branch', exact: true }),
@@ -150,7 +156,6 @@ test('work states survive reload, distinguish failures and expose an overview of
     await expect(status.getByRole('button', { name: 'Ferma task' })).toBeVisible();
     await expect(status.getByRole('button', { name: /Apri modifiche/ })).toHaveCount(0);
     await expect(status.getByText('Completato', { exact: true })).toBeVisible();
-    await expect(status).toContainText('Le verifiche effettuate sono descritte nella risposta.');
     await expect(status.getByRole('button', { name: 'Ferma task' })).toHaveCount(0);
     await expect(status.locator('.preview')).toHaveCount(0);
     await expect(
@@ -272,7 +277,7 @@ test('work card uses the full Git count and hides unavailable or empty compariso
   try {
     await page.goto(`/?chat=${chat.id}`);
     const action = page.getByRole('button', { name: /Apri modifiche/ });
-    await expect(action).toHaveText('Apri modifiche (501)');
+    await expect(action).toHaveText('Modifiche · 501');
     state = 'error';
     await page.evaluate(() => window.dispatchEvent(new Event('git-change')));
     await expect(action).toHaveCount(0);
@@ -286,7 +291,7 @@ test('work card uses the full Git count and hides unavailable or empty compariso
     await expect(action).toHaveCount(0);
     state = 'files';
     await page.evaluate(() => window.dispatchEvent(new Event('git-change')));
-    await expect(action).toHaveText('Apri modifiche (501)');
+    await expect(action).toHaveText('Modifiche · 501');
   } finally {
     await request.post(`/api/conversations/${chat.id}/delete`, { data: {} });
   }

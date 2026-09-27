@@ -11,7 +11,7 @@ import { SearchResults } from './SearchResults';
 import { ImageAttachments } from './ImageAttachments';
 import { ModelPicker } from './ModelPicker';
 import { AgentLogo } from './AgentLogo';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ChatMarkdown } from './ChatMarkdown';
 import {
@@ -94,6 +94,7 @@ function App() {
   const [sendingNow, setSendingNow] = useState<string | null>(null);
   const sendPending = useRef(false);
   const imageInput = useRef<HTMLInputElement>(null);
+  const messageInput = useRef<HTMLTextAreaElement>(null);
   const [search, setSearch] = useState(''),
     [error, setError] = useState(''),
     [notice, setNotice] = useState(''),
@@ -151,6 +152,17 @@ function App() {
   detailRef.current = detail;
   useEffect(() => setDiffOpen(false), [selected]);
   const current = detail?.id === selected ? detail : undefined;
+  useLayoutEffect(() => {
+    const input = messageInput.current;
+    if (!input) return;
+    const resize = () => {
+      input.style.height = 'auto';
+      input.style.height = `${input.scrollHeight}px`;
+    };
+    resize();
+    window.addEventListener('resize', resize);
+    return () => window.removeEventListener('resize', resize);
+  }, [draft, current?.id, draftReady]);
   const run = current ? currentWork(current.runs) : undefined,
     working = busy(run?.status) || sending;
   const workingRef = useRef(working);
@@ -1196,6 +1208,7 @@ function App() {
             />
             <div className="composer-area">
               <QueuePanel
+                key={current.id}
                 chat={current}
                 refresh={() => refresh(current.id)}
                 sendNow={sendNow}
@@ -1238,12 +1251,14 @@ function App() {
                   }}
                 />
                 <textarea
+                  ref={messageInput}
+                  rows={1}
                   aria-label="Messaggio"
                   placeholder={
                     run?.status === 'awaiting_input'
                       ? 'Rispondi per proseguire…'
                       : working
-                        ? 'Aggiungi un messaggio alla coda…'
+                        ? 'Aggiungi alla coda…'
                         : 'Scrivi un messaggio…'
                   }
                   value={draft}

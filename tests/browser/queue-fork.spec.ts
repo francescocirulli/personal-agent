@@ -22,9 +22,11 @@ test('mobile queue: compose while working, reload, send now and automatic drain'
   await composer.fill('Messaggio urgente');
   await page.getByRole('button', { name: 'Aggiungi alla coda' }).click();
   const queue = page.getByRole('region', { name: 'Messaggi in coda' });
+  await queue.getByRole('button', { name: 'Mostra messaggi in coda' }).click();
   await expect(queue.getByText('Messaggio urgente', { exact: true })).toBeVisible();
   await expect(composer).toHaveValue('');
   await page.reload();
+  await queue.getByRole('button', { name: 'Mostra messaggi in coda' }).click();
   await expect(queue.getByText('Messaggio urgente', { exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
   await page.screenshot({ path: 'test-results/queue-mobile.png', fullPage: true });

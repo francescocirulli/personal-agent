@@ -77,6 +77,7 @@ test('mobile queue allows edit, reorder, delete and pause without losing request
   await page.goto(`/?chat=${chat.id}`);
   const queue = page.getByRole('region', { name: 'Messaggi in coda' });
   await expect(queue).toContainText('In pausa');
+  await queue.getByRole('button', { name: 'Mostra messaggi in coda' }).click();
   const second = queue.getByRole('listitem').filter({ hasText: 'Secondo' });
   await second.getByRole('button', { name: 'Modifica', exact: true }).click();
   await page.getByRole('textbox', { name: 'Modifica messaggio in coda' }).fill('Secondo corretto');
@@ -91,6 +92,7 @@ test('mobile queue allows edit, reorder, delete and pause without losing request
     .click();
   await expect(queue.getByRole('listitem')).toHaveCount(2);
   await page.reload();
+  await queue.getByRole('button', { name: 'Mostra messaggi in coda' }).click();
   await expect(queue.getByRole('listitem').first()).toContainText('Secondo corretto');
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
   await page.screenshot({ path: 'test-results/queue-controls-mobile.png', fullPage: true });

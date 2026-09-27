@@ -102,15 +102,23 @@ export function WorkStatus({
   const activity = chat.activity.filter((a) => a.run_id === run?.id).at(-1);
   return (
     <section className="work-status" aria-label="Stato del lavoro">
-      {run && (
+      {(run || working) && (
         <div className="work-status-heading">
-          <StatusBadge status={run.status} paused={!!chat.queue_paused} />
-          <small>
-            {run.status === 'queued' ? 'In attesa da ' : 'Durata '}
-            {duration(
-              (busy(run.status) || run.status === 'queued' ? now : run.updated_at) - run.created_at,
-            )}
-          </small>
+          <StatusBadge status={run?.status || 'running'} paused={!!chat.queue_paused} />
+          {run && (
+            <small>
+              {run.status === 'queued' ? 'In attesa da ' : 'Durata '}
+              {duration(
+                (busy(run.status) || run.status === 'queued' ? now : run.updated_at) -
+                  run.created_at,
+              )}
+            </small>
+          )}
+          {working && (
+            <button type="button" className="work-stop" onClick={onStop} aria-label="Ferma task">
+              <Square size={12} /> Ferma
+            </button>
+          )}
         </div>
       )}
       {!connected && <p>Connessione assente: lo stato verrà aggiornato alla riconnessione.</p>}
@@ -127,7 +135,9 @@ export function WorkStatus({
       ) : run?.error ? (
         <p>{run.error}</p>
       ) : !preview && activity && busy(run?.status) ? (
-        <p>Ultima attività: {activity.text}</p>
+        <p className="work-latest" title={activity.text}>
+          Ultima attività: {activity.text}
+        </p>
       ) : run?.status === 'transcribing' ? (
         <p>Trascrizione del messaggio vocale in corso.</p>
       ) : !preview && run?.status === 'running' ? (
@@ -138,41 +148,32 @@ export function WorkStatus({
           <ChatMarkdown text={preview} />
         </div>
       )}
-      {working && (
-        <>
-          <p>Puoi cambiare chat. Il lavoro continua.</p>
-          <button type="button" onClick={onStop}>
-            <Square size={12} /> Ferma task
-          </button>
-        </>
-      )}
-      {!sending && run?.status === 'complete' && (
-        <p>Esecuzione terminata. Le verifiche effettuate sono descritte nella risposta.</p>
-      )}
-      {!!chat.queue.length && run?.status !== 'queued' && (
-        <small>
-          {chat.queue.length} messaggi in coda{chat.queue_paused ? ' · in pausa' : ''}
-        </small>
-      )}
-      {changes && (
-        <div className="work-changes">
-          <button type="button" onClick={() => onChanges(changes.mode)}>
-            Apri modifiche ({changes.total})
-          </button>
-          <small>
-            {changes.mode === 'local'
-              ? 'Modifiche locali'
-              : `Confronto con ${changes.base?.replace(/^refs\/(heads|remotes)\//, '') || 'il branch di base'}`}
-          </small>
-        </div>
-      )}
-      {!!chat.activity.length && (
-        <ActivityPanel
-          activity={chat.activity}
-          open={activityOpen}
-          onOpenChange={onActivityOpenChange}
-        />
-      )}
+      <div className="work-tools">
+        {changes && (
+          <div className="work-changes">
+            <button
+              type="button"
+              aria-label={`Apri modifiche (${changes.total})`}
+              title={
+                changes.mode === 'local'
+                  ? 'Modifiche locali'
+                  : `Confronto con ${changes.base?.replace(/^refs\/(heads|remotes)\//, '') || 'il branch di base'}`
+              }
+              onClick={() => onChanges(changes.mode)}
+            >
+              Modifiche · {changes.total}
+            </button>
+          </div>
+        )}
+        {!!chat.activity.length && (
+          <ActivityPanel
+            compact
+            activity={chat.activity}
+            open={activityOpen}
+            onOpenChange={onActivityOpenChange}
+          />
+        )}
+      </div>
     </section>
   );
 }

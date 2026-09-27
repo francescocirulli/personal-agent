@@ -4007,6 +4007,210 @@ button svg {
 .work-changes > button {
   margin-top: 0;
 }
+/* Keep the conversation visible; secondary controls expand on demand. */
+.message-queue {
+  padding: 2px 8px;
+  max-height: none;
+  border-radius: 12px;
+  margin-bottom: 6px;
+}
+.queue-heading {
+  flex-wrap: nowrap;
+  gap: 4px;
+}
+.queue-heading .queue-toggle {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 4px;
+  border: 0;
+  text-align: left;
+}
+.queue-toggle strong,
+.queue-toggle svg {
+  flex-shrink: 0;
+}
+.queue-toggle[aria-expanded='true'] svg {
+  transform: rotate(180deg);
+}
+.queue-peek {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-weight: 400;
+}
+.queue-heading .queue-pause {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 0;
+}
+.queue-content {
+  max-height: min(30dvh, 280px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-top: 1px solid var(--border);
+  padding: 8px 2px;
+}
+.queue-content ol {
+  overflow: visible;
+}
+.queue-content button {
+  min-height: 44px;
+}
+.queue-content > small {
+  line-height: 1.4;
+}
+.work-status {
+  margin: 10px 0;
+  padding: 8px 10px;
+}
+.work-status-heading {
+  min-height: 32px;
+  justify-content: flex-start;
+}
+.work-status-heading small {
+  margin-left: auto;
+}
+.work-stop {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: #38443c;
+}
+.work-status > p {
+  margin: 4px 0 8px;
+  font-size: 13px;
+}
+.work-latest {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.work-status .preview {
+  margin-top: 6px;
+  max-height: min(24dvh, 180px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.work-tools {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 4px;
+}
+.work-tools:empty {
+  display: none;
+}
+.work-tools .work-changes,
+.work-tools .activity {
+  margin: 0;
+  min-width: 0;
+  border: 0;
+}
+.work-tools .work-changes > button {
+  width: 100%;
+  font-size: 12px;
+}
+.work-tools > :only-child,
+.work-tools .activity:has([aria-expanded='true']) {
+  grid-column: 1 / -1;
+}
+.work-tools .activity-toggle {
+  min-height: 44px;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+.composer textarea {
+  min-height: 44px;
+  max-height: min(120px, 18dvh);
+  overflow-y: auto;
+}
+@media (max-width: 640px) {
+  .composer-area {
+    padding: 6px 12px max(8px, env(safe-area-inset-bottom));
+  }
+  .composer {
+    padding: 8px 10px;
+    border-radius: 18px;
+  }
+  .composer-caption {
+    display: none;
+  }
+  .composer-bottom {
+    flex-wrap: nowrap;
+    gap: 2px;
+  }
+  .composer-bottom .repo-branch-button,
+  .composer-bottom .repo-empty {
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: none;
+    overflow: hidden;
+  }
+  .composer-bottom .repo-branch-button {
+    padding: 2px;
+    gap: 3px;
+  }
+  .composer-bottom > div {
+    flex-shrink: 0;
+    gap: 2px;
+  }
+  .composer-bottom .diff-open {
+    width: 44px;
+    min-width: 44px;
+    padding: 0;
+    justify-content: center;
+  }
+  .composer-bottom .diff-open span,
+  .composer-bottom .voice-button span {
+    display: none;
+  }
+  .chat-toolbar {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 16px;
+  }
+  .chat-toolbar .chat-title {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    font-size: 16px;
+  }
+  .chat-toolbar .model-picker {
+    flex: 0 1 54%;
+    width: auto;
+    min-width: 0;
+  }
+  .model-picker summary {
+    padding: 6px 8px;
+    min-height: 44px;
+  }
+  .model-picker-panel {
+    left: auto;
+    right: 0;
+    width: min(360px, calc(100vw - 24px));
+  }
+  .mcp-strip {
+    padding-block: 0;
+  }
+  .mcp-strip .text-button {
+    min-height: 44px;
+    font-size: 12px;
+  }
+}
+
 .diff-reading {
   display: flex;
   flex-shrink: 0;

@@ -6,10 +6,12 @@ export function ActivityPanel({
   activity,
   open,
   onOpenChange,
+  compact = false,
 }: {
   activity: Activity[];
   open: boolean;
   onOpenChange(open: boolean): void;
+  compact?: boolean;
 }) {
   const id = useId();
   const [availableHeight, setAvailableHeight] = useState(280);
@@ -55,11 +57,12 @@ export function ActivityPanel({
       <button
         ref={toggle}
         className="activity-toggle"
+        aria-label="Attività del lavoro"
         aria-expanded={open}
         aria-controls={id}
         onClick={() => onOpenChange(!open)}
       >
-        Attività del lavoro
+        {compact ? 'Attività' : 'Attività del lavoro'}
         <span className="activity-count" aria-hidden="true">
           {activity.length}
         </span>
