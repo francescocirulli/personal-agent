@@ -37,7 +37,7 @@ Markdown documentation must be in English. The current product interface and def
 - Agent subprocess environments are explicitly filtered. Do not pass the app password, audio key, or unrelated provider keys to agents.
 - Each chat has at most one active run; overall concurrency is bounded. Closing a client stream must not cancel a run. Cancellation stops the process group, and shutdown must not start new work.
 - Persist messages, queue state, and session identifiers. Interrupted runs must not be silently rerun after restart. Preserve migration behavior for existing SQLite volumes.
-- Git workspaces are independent per chat, but they are not security sandboxes. Branch changes require a clean workspace and no active/queued work; never introduce implicit stash/reset/push operations.
+- Git workspaces are isolated per chat by default; shared mode explicitly reuses a repository checkout. Neither mode is a security sandbox. Branch changes require a clean workspace and no active/queued work in any chat using it; Git operations must also block new runs in those chats. Never introduce implicit stash/reset/push operations.
 - MCP grants are scoped to the current run and chat selection. Global disablement takes precedence. Skill catalog snapshots must respect agent assignment and per-chat selection.
 - Browser contexts are separate per chat. Keep credentials and screenshot contents out of public activity events. Preserve network restrictions and path containment checks.
 - Validate upload/download ownership and paths; do not follow export symlinks or expose active content under the app origin.

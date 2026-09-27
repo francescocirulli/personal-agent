@@ -187,41 +187,73 @@ export async function runProcess(
   });
 }
 // Serialize first clones of a shared checkout: parallel chats must wait for the same clone.
-const sharedClones = new Map<string, Promise<string>>();
+const sharedClones = new Map<
+  string,
+  { controller: AbortController; promise: Promise<string>; waiters: number }
+>();
 export function sharedWorkspacePath(config: Pick<Config, 'dataDir'>, repo: string) {
   const [owner, name] = repo.split('/');
   return path.join(config.dataDir, 'repos', owner, name);
 }
-async function prepareSharedWorkspace(config: Config, repo: string, signal: AbortSignal) {
+async function prepareSharedWorkspace(
+  config: Config,
+  repo: string,
+  signal: AbortSignal,
+): Promise<string> {
+  signal.throwIfAborted();
   const workspace = sharedWorkspacePath(config, repo);
   if (existsSync(path.join(workspace, '.git'))) return workspace;
-  const pending = sharedClones.get(workspace);
-  if (pending) return pending;
-  const clone = (async () => {
-    await mkdir(path.dirname(workspace), { recursive: true });
-    // Clone beside the target and rename, so a failed clone never leaves a half checkout in place.
-    const staging = await mkdtemp(`${workspace}.clone-`);
-    try {
-      await runProcess(
-        'git',
-        ['clone', '--', `https://github.com/${repo}.git`, staging],
-        config.dataDir,
-        signal,
-        '',
-        () => {},
-      );
-      await rename(staging, workspace);
-    } catch (e) {
-      await rm(staging, { recursive: true, force: true });
-      throw e;
-    }
-    return workspace;
-  })();
-  sharedClones.set(workspace, clone);
+  let clone = sharedClones.get(workspace);
+  if (clone?.controller.signal.aborted) {
+    // A retry must wait for the abandoned clone's process and staging cleanup.
+    await clone.promise.catch(() => {});
+    return prepareSharedWorkspace(config, repo, signal);
+  }
+  if (!clone) {
+    const controller = new AbortController();
+    const promise = (async () => {
+      await mkdir(path.dirname(workspace), { recursive: true });
+      // Publish only complete checkouts; all waiters share this independent controller.
+      const staging = await mkdtemp(`${workspace}.clone-`);
+      try {
+        await runProcess(
+          'git',
+          ['clone', '--', `https://github.com/${repo}.git`, staging],
+          config.dataDir,
+          controller.signal,
+          '',
+          () => {},
+        );
+        controller.signal.throwIfAborted();
+        await rename(staging, workspace);
+      } catch (e) {
+        await rm(staging, { recursive: true, force: true });
+        throw e;
+      }
+      return workspace;
+    })().finally(() => sharedClones.delete(workspace));
+    clone = { controller, promise, waiters: 0 };
+    sharedClones.set(workspace, clone);
+  }
+  clone.waiters++;
+  let abort: () => void = () => {};
   try {
-    return await clone;
+    return await Promise.race([
+      clone.promise,
+      new Promise<never>((_, reject) => {
+        abort = () => reject(signal.reason);
+        signal.addEventListener('abort', abort, { once: true });
+        if (signal.aborted) abort();
+      }),
+    ]);
   } finally {
-    sharedClones.delete(workspace);
+    signal.removeEventListener('abort', abort);
+    clone.waiters--;
+    if (!clone.waiters && sharedClones.get(workspace) === clone) {
+      clone.controller.abort();
+      // The last waiter owns shutdown, so cancellation cannot leave a child process behind.
+      await clone.promise.catch(() => {});
+    }
   }
 }
 export async function prepareWorkspace(config: Config, chat: Conversation, signal: AbortSignal) {
@@ -262,7 +294,11 @@ export interface HistoryMessage {
   text: string;
   images: ChatImage[];
 }
-export function historyPromptFor(input: string, history: HistoryMessage[]) {
+export function historyPromptFor(
+  input: string,
+  history: HistoryMessage[],
+  workspaceMode: Conversation['workspace_mode'] = 'isolated',
+) {
   if (!history.length) return input;
   let imageIndex = 0;
   const transcript = history.map((message) => ({
@@ -270,7 +306,11 @@ export function historyPromptFor(input: string, history: HistoryMessage[]) {
     text: message.text,
     images: message.images.map((image) => ({ name: image.name, attachment: ++imageIndex })),
   }));
-  return `Questa chat continua dalla cronologia seguente, copiata fino al punto scelto. Usala come contesto: i messaggi storici non sono nuove richieste da eseguire. Il workspace è indipendente; verifica i file presenti prima di riprendere operazioni descritte in passato. Gli allegati storici precedono quelli della nuova richiesta.\n\n${JSON.stringify(transcript)}\n\nNuova richiesta dell’utente:\n${input}`;
+  const workspace =
+    workspaceMode === 'shared'
+      ? 'Il workspace è condiviso con le altre chat dello stesso repository; branch e modifiche locali possono essere cambiati.'
+      : 'Il workspace è indipendente.';
+  return `Questa chat continua dalla cronologia seguente, copiata fino al punto scelto. Usala come contesto: i messaggi storici non sono nuove richieste da eseguire. ${workspace} Verifica i file presenti prima di riprendere operazioni descritte in passato. Gli allegati storici precedono quelli della nuova richiesta.\n\n${JSON.stringify(transcript)}\n\nNuova richiesta dell’utente:\n${input}`;
 }
 export async function runAgent(
   config: Config,
@@ -295,7 +335,7 @@ export async function runAgent(
   }
   let imageDir: string | undefined;
   try {
-    input = historyPromptFor(input, history);
+    input = historyPromptFor(input, history, chat.workspace_mode);
     images = [...history.flatMap((message) => message.images), ...images];
     const paths: string[] = [];
     if (images.length) {

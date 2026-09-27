@@ -262,7 +262,7 @@ export function WorkspaceModePicker({
       </div>
       <small>
         {value === 'shared'
-          ? 'Parte subito: le chat di questo repository lavorano nella stessa copia, sul branch in cui si trova.'
+          ? 'Riusa una copia del repository: branch e modifiche sono condivisi tra le chat, anche mentre lavorano insieme.'
           : 'Una copia e un branch dedicati a questa chat: più lenta da preparare, nessuna interferenza.'}
       </small>
     </div>
