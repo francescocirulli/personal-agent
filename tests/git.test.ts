@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtemp, mkdir, rm, writeFile, readFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile, readFile, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -273,6 +273,148 @@ test('prepare demo repository before first task; free chats do not inherit a par
     await mkdir(nested);
     f.store.db.prepare('UPDATE conversations SET workspace=? WHERE id=?').run(nested, free.id);
     assert.equal((await f.request(`/conversations/${free.id}/git`)).status, 409);
+  } finally {
+    await f.close();
+  }
+});
+
+test('diffs include staged, unstaged, new, deleted and renamed files; branch comparison survives commits', async () => {
+  const f = await fixture();
+  try {
+    const route = `/conversations/${f.chat.id}/diff`;
+    assert.equal((await f.request(route, undefined, false)).status, 401);
+    await git(f.workspace, 'config', 'user.email', 'test@example.invalid');
+    await git(f.workspace, 'config', 'user.name', 'Test');
+    await git(f.workspace, 'switch', '-c', 'review');
+    await writeFile(path.join(f.workspace, 'remove.txt'), 'to remove\n');
+    await writeFile(path.join(f.workspace, 'rename.txt'), 'renamed content\n');
+    await git(f.workspace, 'add', '.');
+    await git(f.workspace, 'commit', '-m', 'Fixtures');
+    await writeFile(path.join(f.workspace, 'README.md'), 'staged content\n');
+    await git(f.workspace, 'add', 'README.md');
+    await writeFile(path.join(f.workspace, 'README.md'), 'staged content\nworking copy\n');
+    await git(f.workspace, 'mv', 'rename.txt', 'renamed.txt');
+    await rm(path.join(f.workspace, 'remove.txt'));
+    await writeFile(path.join(f.workspace, 'new file.txt'), 'new content\n');
+    const before = await git(f.workspace, 'status', '--porcelain');
+    const state = await (await f.request(route)).json();
+    assert.equal(state.total, 4);
+    assert.equal(state.files.find((x: any) => x.path === 'renamed.txt').previousPath, 'rename.txt');
+    assert.equal(state.files.find((x: any) => x.path === 'remove.txt').status, 'D');
+    const diff = await (await f.request(route + '?file=README.md')).json();
+    assert.match(diff.patch, /-main contents/);
+    assert.match(diff.patch, /\+staged content/);
+    assert.match(diff.patch, /\+working copy/);
+    assert.match(
+      (await (await f.request(route + '?file=new%20file.txt')).json()).patch,
+      /\+new content/,
+    );
+    assert.match(
+      (await (await f.request(route + '?file=renamed.txt')).json()).patch,
+      /rename from rename.txt/,
+    );
+    assert.match((await (await f.request(route + '?file=remove.txt')).json()).patch, /-to remove/);
+    assert.equal(await git(f.workspace, 'status', '--porcelain'), before);
+    await git(f.workspace, 'add', '-A');
+    await git(f.workspace, 'commit', '-m', 'Reviewed work');
+    assert.equal((await (await f.request(route)).json()).total, 0);
+    const branch = await (await f.request(route + '?mode=branch&base=refs/heads/main')).json();
+    assert.equal(branch.base, 'refs/heads/main');
+    assert.ok(branch.files.some((x: any) => x.path === 'README.md'));
+    assert.match(
+      (await (await f.request(route + '?mode=branch&base=refs/heads/main&file=README.md')).json())
+        .patch,
+      /\+working copy/,
+    );
+    assert.equal((await f.request(route + '?mode=branch&base=--output=/tmp/unsafe')).status, 409);
+    assert.equal((await f.request(route + '?file=../../etc/passwd')).status, 404);
+    assert.equal((await f.request(route + '?file=.git/config')).status, 404);
+    assert.equal((await f.request(route + '?mode=invalid')).status, 400);
+    await f.restart();
+    assert.ok((await (await f.request(route + '?mode=branch&base=refs/heads/main')).json()).total);
+    const other = f.store.create('codex', 'example/project', 'Other checkout');
+    assert.equal(
+      (await (await f.request(`/conversations/${other.id}/diff`)).json()).git.ready,
+      false,
+    );
+    assert.equal((await f.request(`/conversations/${other.id}/diff?file=README.md`)).status, 404);
+  } finally {
+    await f.close();
+  }
+});
+
+test('diffs handle binary/large files, symlinks, literal unusual paths and unborn HEAD', async () => {
+  const f = await fixture();
+  try {
+    const route = `/conversations/${f.chat.id}/diff`;
+    const file = async (name: string) =>
+      (await f.request(route + '?file=' + encodeURIComponent(name))).json();
+    await writeFile(path.join(f.workspace, 'binary.bin'), Buffer.from([0, 1, 2]));
+    assert.equal((await file('binary.bin')).binary, true);
+    await writeFile(path.join(f.workspace, 'large.txt'), 'x'.repeat(1024 * 1024 + 1));
+    assert.equal((await file('large.txt')).limited, true);
+    await writeFile(path.join(f.workspace, 'preview.txt'), 'x\n'.repeat(70000));
+    assert.ok((await file('preview.txt')).patch.length <= 200000);
+    assert.equal((await file('preview.txt')).patch.split('\n').length, 5000);
+    assert.equal((await file('preview.txt')).limited, true);
+    const outside = path.join(f.dir, 'private.txt');
+    await writeFile(outside, 'outside-secret');
+    await symlink(outside, path.join(f.workspace, 'link'));
+    const link = await file('link');
+    assert.doesNotMatch(link.patch, /outside-secret/);
+    assert.match(link.patch, /private.txt/);
+    for (const name of [
+      '[literal].txt',
+      'line\nbreak.txt',
+      'trailing .txt',
+      '-option.txt',
+      'accento-è.txt',
+    ]) {
+      await writeFile(path.join(f.workspace, name), 'literal content\n');
+      assert.match((await file(name)).patch, /\+literal content/);
+    }
+    assert.equal((await f.request(route + '?file=' + encodeURIComponent(':(glob)*'))).status, 404);
+    // Git text conversion must never execute when a file is reviewed.
+    const marker = path.join(f.dir, 'textconv-executed');
+    const script = path.join(f.dir, 'textconv.sh');
+    await writeFile(script, `#!/bin/sh\ntouch '${marker}'\necho converted\n`, { mode: 0o700 });
+    await writeFile(path.join(f.workspace, '.gitattributes'), 'README.md diff=unsafe\n');
+    await git(f.workspace, 'config', 'diff.unsafe.textconv', script);
+    await git(f.workspace, 'config', 'diff.external', script);
+    await writeFile(path.join(f.workspace, 'README.md'), 'review safe\n');
+    assert.match((await file('README.md')).patch, /review safe/);
+    await assert.rejects(readFile(marker));
+    const newChat = f.store.create('codex', null, 'Unborn');
+    const newWorkspace = path.join(f.dir, 'unborn');
+    await mkdir(newWorkspace);
+    await git(newWorkspace, 'init', '-b', 'main');
+    f.store.db
+      .prepare('UPDATE conversations SET workspace=? WHERE id=?')
+      .run(newWorkspace, newChat.id);
+    await writeFile(path.join(newWorkspace, 'first.txt'), 'first\n');
+    await git(newWorkspace, 'add', '.');
+    const unborn = `/conversations/${newChat.id}/diff`;
+    assert.equal((await (await f.request(unborn)).json()).total, 1);
+    assert.match((await (await f.request(unborn + '?file=first.txt')).json()).patch, /\+first/);
+  } finally {
+    await f.close();
+  }
+});
+
+test('staged edits cancelled in the working tree remain reviewable without mutating the index', async () => {
+  const f = await fixture();
+  try {
+    const route = `/conversations/${f.chat.id}/diff`;
+    await writeFile(path.join(f.workspace, 'README.md'), 'staged-only\n');
+    await git(f.workspace, 'add', 'README.md');
+    await writeFile(path.join(f.workspace, 'README.md'), 'main contents');
+    const state = await (await f.request(route)).json();
+    assert.equal(state.files[0].indexOnly, true);
+    const diff = await (await f.request(route + '?file=README.md')).json();
+    assert.match(diff.patch, /\+staged-only/);
+    assert.match(diff.note, /copia di lavoro le annulla/);
+    assert.equal(await git(f.workspace, 'show', ':README.md'), 'staged-only');
+    assert.equal(await readFile(path.join(f.workspace, 'README.md'), 'utf8'), 'main contents');
   } finally {
     await f.close();
   }

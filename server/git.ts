@@ -30,19 +30,28 @@ export interface GitView {
 }
 export class GitService {
   constructor(private config: Config) {}
-  async command(cwd: string, args: string[], signal?: AbortSignal) {
+  async command(cwd: string, args: string[], signal?: AbortSignal, raw = false) {
     try {
       const result = await exec('git', ['-c', 'core.hooksPath=/dev/null', ...args], {
         cwd,
-        env: { ...agentEnvironment(this.config), GIT_OPTIONAL_LOCKS: '0' },
+        env: {
+          ...agentEnvironment(this.config),
+          GIT_OPTIONAL_LOCKS: '0',
+          GIT_LITERAL_PATHSPECS: '1',
+        },
         timeout: 60000,
         maxBuffer: 4 * 1024 * 1024,
         signal,
       });
-      return result.stdout.trimEnd();
+      return raw ? result.stdout : result.stdout.trimEnd();
     } catch (error: any) {
       // Do not return stderr: remotes may contain credentials or private filesystem paths.
       if (error.name === 'AbortError') throw error;
+      if (error.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER')
+        throw new GitError(
+          413,
+          'Differenza troppo grande da visualizzare. Seleziona un file più piccolo.',
+        );
       throw new GitError(
         409,
         'Operazione Git non riuscita. Aggiorna lo stato e riprova; controlla il repository se il problema persiste.',

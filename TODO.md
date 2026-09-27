@@ -6,3 +6,5 @@
 - [x] **Bozze e coda:** salvataggio locale di testo e allegati per chat; modifica, eliminazione, riordinamento e pausa persistente della coda.
 
 - [x] **Repository e branch da mobile:** branch effettivo nel compositore, cambio branch locale/remoto e creazione da un punto di partenza scelto, senza worktree.
+- [x] **Diff Git per chat:** revisione mobile delle modifiche locali e confronto con un branch, in sola lettura.
+- [x] **Stati dei lavori:** esiti distinti, durata, attività informative, panoramica nello storico e attesa esplicita della risposta dell’utente.

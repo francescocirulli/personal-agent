@@ -1,4 +1,5 @@
 import { GitService, GitError } from './git';
+import { GitDiffService } from './git-diff';
 import {
   prepareDocuments,
   stageDocuments,
@@ -63,6 +64,7 @@ export function createApp(config: Config) {
   const active = new Map<string, { controller: AbortController; promise: Promise<void> }>();
   const deletingChats = new Set<string>();
   const git = new GitService(config);
+  const diffs = new GitDiffService(git);
   const gitOperations = new Map<string, { controller: AbortController; promise: Promise<void> }>();
   let closing = false;
   const streams = new Set<Response>();
@@ -102,7 +104,7 @@ export function createApp(config: Config) {
     images: ChatFile[] = [],
     savedMessage = false,
   ) {
-    let outcome: 'complete' | 'error' | 'cancelled' = 'complete';
+    let outcome: 'complete' | 'awaiting_input' | 'error' | 'cancelled' | 'interrupted' = 'complete';
     let responseId: string | undefined;
     let documentDir: string | undefined;
     let mcpAccess: ReturnType<McpService['access']> | undefined;
@@ -232,7 +234,7 @@ export function createApp(config: Config) {
       const result = splitVoice(lastText);
       const exported = await collectExports(exportsDir);
       for (const warning of exported.warnings) {
-        const activity = store.activity(chat.id, runId, warning);
+        const activity = store.activity(chat.id, runId, warning, 'warning');
         publish({ type: 'status', conversationId: chat.id, runId, activity });
       }
       const message = store.addMessage(
@@ -244,16 +246,22 @@ export function createApp(config: Config) {
         exported.files,
       );
       responseId = message.id;
-      store.setRun(runId, 'complete');
+      outcome = result.awaitingInput ? 'awaiting_input' : 'complete';
+      if (result.awaitingInput)
+        store.db.prepare('UPDATE conversations SET queue_paused=1 WHERE id=?').run(chat.id);
+      store.setRun(runId, outcome);
       publish({ type: 'done', conversationId: chat.id, runId, messageId: message.id });
     } catch (e) {
-      outcome = controller.signal.aborted ? 'cancelled' : 'error';
+      outcome = controller.signal.aborted ? (closing ? 'interrupted' : 'cancelled') : 'error';
       const message = controller.signal.aborted
-        ? 'Task interrotto su richiesta.'
+        ? closing
+          ? 'Il server è stato arrestato. Il lavoro non viene rieseguito automaticamente.'
+          : 'Task fermato su richiesta.'
         : e instanceof Error
           ? e.message
           : 'Errore durante il task.';
-      store.setRun(runId, controller.signal.aborted ? 'cancelled' : 'error', message);
+      store.setRun(runId, outcome, message);
+      store.activity(chat.id, runId, message, outcome === 'error' ? 'error' : 'warning');
       store.touch(chat.id);
       publish({
         type: 'run_error',
@@ -736,6 +744,20 @@ export function createApp(config: Config) {
     const view = await git.view(chat);
     res.json({ ...view, blocked: gitBlocked(chat.id) });
   });
+  app.get('/api/conversations/:id/diff', async (req, res) => {
+    const chat = getChat(String(req.params.id));
+    if (gitOperations.has(chat.id))
+      throw new GitError(409, 'Operazione Git in corso. Aggiorna tra un istante.');
+    const input = z
+      .object({
+        mode: z.enum(['local', 'branch']).default('local'),
+        base: z.string().min(1).max(300).optional(),
+        file: z.string().min(1).max(4096).optional(),
+      })
+      .parse(req.query);
+    const view = await diffs.view(chat, input.mode, input.base);
+    res.json(input.file ? await diffs.file(chat, view, input.file) : view);
+  });
   app.post('/api/conversations/:id/git', async (req, res) => {
     const chat = getChat(String(req.params.id));
     const input = z
@@ -995,12 +1017,21 @@ export function createApp(config: Config) {
           409,
           'Operazione Git in corso. Riprova al termine; la bozza è conservata.',
         );
-      if (audioFile && (active.has(chat.id) || store.queue(chat.id).length))
+      const awaitingReply =
+        store
+          .runs(chat.id)
+          .filter((r) => r.status !== 'queued')
+          .at(-1)?.status === 'awaiting_input';
+      if (audioFile && (active.has(chat.id) || (!awaitingReply && store.queue(chat.id).length)))
         throw new HttpError(
           409,
           'Attendi la fine del task per inviare una registrazione. Puoi scrivere un messaggio in coda.',
         );
-      if (!active.has(chat.id) && !store.queue(chat.id).length && active.size >= config.maxRuns)
+      if (
+        !active.has(chat.id) &&
+        (audioFile || !store.queue(chat.id).length) &&
+        active.size >= config.maxRuns
+      )
         throw new HttpError(429, 'Tutti gli agenti sono occupati. Riprova tra poco.');
       if (!audioFile) {
         if (store.queue(chat.id).length >= 50)
@@ -1013,6 +1044,12 @@ export function createApp(config: Config) {
               : 'Descrivi le immagini allegate.'),
           images,
         );
+        // A direct reply to a clarification takes precedence over the paused backlog.
+        // Keep that backlog paused until the user explicitly resumes it.
+        if (awaitingReply)
+          store.db
+            .prepare('UPDATE run_queue SET bypass_pause=1,priority=1 WHERE run_id=?')
+            .run(runId);
         publish({ type: 'queued', conversationId: chat.id, runId });
         drainQueue();
         return res.status(202).json({

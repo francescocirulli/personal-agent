@@ -1,3 +1,5 @@
+import { DiffPanel } from './DiffPanel';
+import { WorkStatus, StatusBadge, currentWork } from './WorkStatus';
 import type { MarkdownDocument } from './markdown';
 import { NotificationSettings } from './NotificationSettings';
 import { notificationDeviceId, updateAppBadge } from './notifications';
@@ -20,8 +22,8 @@ import {
   Bell,
   Check,
   ChevronLeft,
-  CircleHelp,
   FolderGit2,
+  FileDiff,
   GitFork,
   Headphones,
   LoaderCircle,
@@ -63,6 +65,9 @@ const MarkdownReader = React.lazy(() => import('./MarkdownReader'));
 function App() {
   const [markdownDocument, setMarkdownDocument] = useState<MarkdownDocument>();
   const [activityOpen, setActivityOpen] = useState(false);
+  const [diffOpen, setDiffOpen] = useState(false);
+  const [workOnly, setWorkOnly] = useState(false);
+
   const [notificationsOpen, setNotificationsOpen] = useState(
     new URLSearchParams(location.search).get('settings') === 'notifications',
   );
@@ -138,10 +143,9 @@ function App() {
   voiceSelection.current = voiceChat;
   config.current = settings;
   detailRef.current = detail;
+  useEffect(() => setDiffOpen(false), [selected]);
   const current = detail?.id === selected ? detail : undefined;
-  const run =
-      current?.runs.find((r) => busy(r.status)) ||
-      current?.runs.filter((r) => r.status !== 'queued').at(-1),
+  const run = current ? currentWork(current.runs) : undefined,
     working = busy(run?.status) || sending;
   const workingRef = useRef(working);
   workingRef.current = working;
@@ -714,8 +718,14 @@ function App() {
   }
   const activeCount = chats.filter((c) => busy(c.status)).length;
   const chatGroups = new Map<string, Chat[]>();
-  for (const chat of chats.filter((c) =>
-    `${c.title} ${c.repo || ''}`.toLowerCase().includes(search.toLowerCase()),
+  for (const chat of chats.filter(
+    (c) =>
+      `${c.title} ${c.repo || ''}`.toLowerCase().includes(search.toLowerCase()) &&
+      (!workOnly ||
+        (!!c.status &&
+          ['running', 'transcribing', 'queued', 'awaiting_input', 'error', 'interrupted'].includes(
+            c.status,
+          ))),
   )) {
     const key = chat.repo?.toLowerCase() || '';
     chatGroups.set(key, [...(chatGroups.get(key) || []), chat]);
@@ -817,6 +827,14 @@ function App() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </label>
+        <button
+          type="button"
+          className="work-filter"
+          aria-pressed={workOnly}
+          onClick={() => setWorkOnly(!workOnly)}
+        >
+          {workOnly ? 'Mostra tutte le chat' : 'Lavori in corso e da seguire'}
+        </button>
         <div className="section-label">
           CONVERSAZIONI <span>{chats.length}</span>
         </div>
@@ -845,11 +863,18 @@ function App() {
                     <button
                       className={`chat-link ${selected === c.id ? 'active' : ''}`}
                       aria-current={selected === c.id ? 'page' : undefined}
+                      aria-label={`${c.title} ${agentName(c.agent)}`}
+                      aria-describedby={c.status ? `work-${c.id}` : undefined}
                       onClick={() => choose(c.id)}
                     >
                       <span>
                         <strong>{c.title}</strong>
                         <small>{agentName(c.agent)}</small>
+                        <StatusBadge
+                          id={`work-${c.id}`}
+                          status={c.status}
+                          paused={!!c.queue_paused}
+                        />
                       </span>
                       {!!c.unread_count && (
                         <span
@@ -861,9 +886,6 @@ function App() {
                               : `${c.unread_count} risposte non lette`
                           }
                         />
-                      )}
-                      {busy(c.status) && (
-                        <span className="status-dot pulse" aria-label="In corso" />
                       )}
                     </button>
                     <button
@@ -1132,7 +1154,8 @@ function App() {
                         ? 'Invio il messaggio…'
                         : run?.status === 'transcribing'
                           ? 'Sto ascoltando il tuo messaggio…'
-                          : current.activity.at(-1)?.text || 'Il tuo agente sta lavorando…'}
+                          : current.activity.filter((a) => a.run_id === run?.id).at(-1)?.text ||
+                            'Il tuo agente sta lavorando…'}
                     </span>
                   </div>
                   {preview && (
@@ -1153,12 +1176,14 @@ function App() {
                   </button>
                 </div>
               )}
-              {run && ['error', 'cancelled', 'interrupted'].includes(run.status) && (
-                <div className="run-error" role="status">
-                  <CircleHelp size={18} />
-                  <span>{run.error}</span>
-                </div>
-              )}
+              <WorkStatus
+                chat={current}
+                connected={connected}
+                onChanges={() => {
+                  stopVoice();
+                  setDiffOpen(true);
+                }}
+              />
               {!!current.activity.length && (
                 <ActivityPanel
                   key={current.id}
@@ -1169,6 +1194,13 @@ function App() {
               )}
               <div ref={bottom} />
             </div>
+            <DiffPanel
+              key={current.id}
+              chat={current}
+              open={diffOpen}
+              onClose={() => setDiffOpen(false)}
+              running={working}
+            />
             <div className="composer-area">
               <QueuePanel
                 chat={current}
@@ -1215,7 +1247,11 @@ function App() {
                 <textarea
                   aria-label="Messaggio"
                   placeholder={
-                    working ? 'Aggiungi un messaggio alla coda…' : 'Scrivi un messaggio…'
+                    run?.status === 'awaiting_input'
+                      ? 'Rispondi per proseguire…'
+                      : working
+                        ? 'Aggiungi un messaggio alla coda…'
+                        : 'Scrivi un messaggio…'
                   }
                   value={draft}
                   disabled={sending || !draftReady}
@@ -1235,6 +1271,18 @@ function App() {
                     running={working}
                     onSaved={() => refresh(current.id)}
                   />
+                  <button
+                    type="button"
+                    className="diff-open"
+                    aria-label="Modifiche della chat"
+                    onClick={() => {
+                      stopVoice();
+                      setDiffOpen(true);
+                    }}
+                  >
+                    <FileDiff size={17} />
+                    <span>Modifiche</span>
+                  </button>
                   <div>
                     <button
                       type="button"
@@ -1259,7 +1307,11 @@ function App() {
                     <button
                       className="send-button"
                       aria-label={
-                        working || current.queue_paused ? 'Aggiungi alla coda' : 'Invia messaggio'
+                        run?.status === 'awaiting_input'
+                          ? 'Invia risposta'
+                          : working || current.queue_paused
+                            ? 'Aggiungi alla coda'
+                            : 'Invia messaggio'
                       }
                       title={
                         working ? 'Il messaggio partirà al termine del task' : 'Invia messaggio'

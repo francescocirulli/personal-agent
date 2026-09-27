@@ -8,7 +8,14 @@ import { randomUUID } from 'node:crypto';
 
 export type Agent = 'claude' | 'codex';
 export type RunStatus =
-  'queued' | 'transcribing' | 'running' | 'complete' | 'error' | 'cancelled' | 'interrupted';
+  | 'queued'
+  | 'transcribing'
+  | 'running'
+  | 'complete'
+  | 'error'
+  | 'cancelled'
+  | 'interrupted'
+  | 'awaiting_input';
 export interface Conversation {
   id: string;
   title: string;
@@ -46,6 +53,7 @@ export interface Run {
   updated_at: number;
 }
 export interface Activity {
+  kind?: 'info' | 'warning' | 'error';
   id: number;
   conversation_id: string;
   run_id: string;
@@ -107,6 +115,13 @@ export class Store {
         .some((c) => c.name === 'bypass_pause')
     )
       this.db.exec('ALTER TABLE run_queue ADD COLUMN bypass_pause INTEGER NOT NULL DEFAULT 0');
+    if (
+      !this.db
+        .prepare('PRAGMA table_info(activity)')
+        .all()
+        .some((c) => c.name === 'kind')
+    )
+      this.db.exec("ALTER TABLE activity ADD COLUMN kind TEXT NOT NULL DEFAULT 'info'");
     this.db.function('search_fold', { deterministic: true }, (value) =>
       String(value ?? '')
         .normalize('NFD')
@@ -141,11 +156,31 @@ export class Store {
       .run(Date.now());
   }
   list() {
-    return this.db
+    const rows = this.db
       .prepare(
-        `SELECT c.*, (SELECT count(*) FROM messages m WHERE m.conversation_id=c.id AND m.role='assistant' AND m.rowid>c.read_message_seq) AS unread_count, (SELECT status FROM runs WHERE conversation_id=c.id ORDER BY CASE WHEN status IN ('running','transcribing') THEN 0 WHEN status='queued' THEN 1 ELSE 2 END,created_at DESC,rowid DESC LIMIT 1) AS status FROM conversations c ORDER BY updated_at DESC`,
+        `SELECT c.*,
+      (SELECT count(*) FROM messages m WHERE m.conversation_id=c.id AND m.role='assistant' AND m.rowid>c.read_message_seq) AS unread_count,
+      (SELECT status FROM runs WHERE conversation_id=c.id AND status IN ('running','transcribing') LIMIT 1) AS active_status,
+      (SELECT status FROM runs WHERE conversation_id=c.id AND status<>'queued' ORDER BY created_at DESC,rowid DESC LIMIT 1) AS latest_status,
+      (SELECT count(*) FROM runs WHERE conversation_id=c.id AND status='queued') AS queued_count
+      FROM conversations c ORDER BY updated_at DESC`,
       )
-      .all() as unknown as (Conversation & { status: RunStatus | null; unread_count: number })[];
+      .all() as unknown as (Conversation & {
+      unread_count: number;
+      active_status: RunStatus | null;
+      latest_status: RunStatus | null;
+      queued_count: number;
+    })[];
+    return rows.map(({ active_status, latest_status, queued_count, ...chat }) => ({
+      ...chat,
+      status:
+        active_status ||
+        (latest_status === 'awaiting_input'
+          ? latest_status
+          : queued_count
+            ? ('queued' as const)
+            : latest_status),
+    }));
   }
   unreadCount() {
     return this.list().reduce((sum, chat) => sum + chat.unread_count, 0);
@@ -387,15 +422,18 @@ export class Store {
   touch(id: string) {
     this.db.prepare('UPDATE conversations SET updated_at=? WHERE id=?').run(Date.now(), id);
   }
-  activity(chat: string, run: string, text: string) {
+  activity(chat: string, run: string, text: string, kind: NonNullable<Activity['kind']> = 'info') {
     const now = Date.now();
     const result = this.db
-      .prepare('INSERT INTO activity(conversation_id,run_id,text,created_at) VALUES (?,?,?,?)')
-      .run(chat, run, text, now);
+      .prepare(
+        'INSERT INTO activity(conversation_id,run_id,text,created_at,kind) VALUES (?,?,?,?,?)',
+      )
+      .run(chat, run, text, now, kind);
     return {
       id: Number(result.lastInsertRowid),
       conversation_id: chat,
       run_id: run,
+      kind,
       text,
       created_at: now,
     };

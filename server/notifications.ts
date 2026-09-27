@@ -147,7 +147,7 @@ export function createNotifications(store: Store, config: Config, presence: Map<
     res.json({ ok: true });
   });
   async function notify(chat: Conversation, status: RunStatus, messageId?: string) {
-    if (!enabled || !['complete', 'error'].includes(status)) return;
+    if (!enabled || !['complete', 'awaiting_input', 'error'].includes(status)) return;
     const current = store.conversation(chat.id);
     if (!current) return;
     const message = messageId ? store.messages(chat.id).find((m) => m.id === messageId) : undefined;
@@ -173,7 +173,9 @@ export function createNotifications(store: Store, config: Config, presence: Map<
           const summary =
             status === 'error'
               ? `${agent} non ha completato il lavoro. Apri la chat per i dettagli.`
-              : `${agent} ha risposto.`;
+              : status === 'awaiting_input'
+                ? `${agent} attende una tua risposta.`
+                : `${agent} ha risposto.`;
           const preview =
             prefs.preview && message
               ? (message.voice_text || message.text).replace(/\s+/g, ' ').trim().slice(0, 160)

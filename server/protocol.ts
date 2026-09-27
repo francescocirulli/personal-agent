@@ -44,12 +44,19 @@ export function toolStatus(tool: string) {
 }
 export function splitVoice(raw: string) {
   // Ignore fenced code: sample tags in code are not spoken summaries.
-  const prose = raw.replace(/```[\s\S]*?```/g, '');
+  const prose = raw.replace(/```[\s\S]*?```|~~~[\s\S]*?~~~/g, '');
   const tags = [...prose.matchAll(/<voce>([\s\S]*?)<\/voce>/gi)];
   const spoken = tags.at(-1)?.[1]?.trim();
+  const awaitingInput = /^[ \t]*<richiesta_input[ \t]*\/>[ \t]*$/im.test(prose);
   const text = raw
-    .split(/(```[\s\S]*?```)/g)
-    .map((part) => (part.startsWith('```') ? part : part.replace(/<voce>[\s\S]*?<\/voce>/gi, '')))
+    .split(/(```[\s\S]*?```|~~~[\s\S]*?~~~)/g)
+    .map((part) =>
+      part.startsWith('```') || part.startsWith('~~~')
+        ? part
+        : part
+            .replace(/<voce>[\s\S]*?<\/voce>/gi, '')
+            .replace(/^[ \t]*<richiesta_input[ \t]*\/>[ \t]*$/gim, ''),
+    )
     .join('')
     .trim();
   const fallback = prose
@@ -59,6 +66,7 @@ export function splitVoice(raw: string) {
     .replace(/[#*_`>]/g, '')
     .trim();
   return {
+    awaitingInput,
     text: text || spoken || 'Risposta disponibile.',
     voice: (spoken || fallback || 'La risposta è disponibile nella chat.').slice(0, 12000),
   };

@@ -1,4 +1,4 @@
-const CACHE = 'personal-agent-shell-v14';
+const CACHE = 'personal-agent-shell-v15';
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE).then((cache) => cache.addAll(['/', '/icon-192.png', '/icon-512.png'])),
