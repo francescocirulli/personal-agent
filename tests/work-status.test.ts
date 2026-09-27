@@ -113,6 +113,11 @@ console.log(JSON.stringify({type:'item.completed',item:{type:'agent_message',tex
     );
     assert.equal(runtime.store.list().find((c) => c.id === chat.id)?.status, 'cancelled');
     const shutdown = await request(base + '/turns', { text: 'Interrupted at shutdown' });
+    // The cancelled run may still be releasing resources, temporarily queuing this turn.
+    // This assertion covers interruption of running work, not pending-queue recovery.
+    await until(() =>
+      runtime.store.runs(chat.id).some((r) => r.id === shutdown.runId && r.status === 'running'),
+    );
     await runtime.close();
     await new Promise<void>((r) => server.close(() => r()));
     runtime = createApp(config);

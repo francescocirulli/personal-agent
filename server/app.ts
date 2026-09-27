@@ -9,6 +9,14 @@ import {
 } from './files';
 import { effortLevels } from './agent-effort';
 import {
+  experimentsSchema,
+  experimentsOff,
+  routingSchema,
+  routingReasons,
+  type RoutingConfig,
+} from './experiments';
+import { routeTurn, validateRouting, type RoutingDependencies } from './smart-routing';
+import {
   chatToolsInput,
   mcpAvailability,
   skillAvailability,
@@ -47,6 +55,7 @@ class HttpError extends Error {
 }
 const hash = (s: string) => createHash('sha256').update(s).digest();
 const chatInput = z.object({
+  routing: routingSchema.nullable().optional(),
   tools: chatToolsInput.optional(),
   agent: z.enum(['claude', 'codex']),
   repo: z
@@ -57,7 +66,7 @@ const chatInput = z.object({
     .optional(),
   title: z.string().trim().min(1).max(100).default('Nuova conversazione'),
 });
-export function createApp(config: Config) {
+export function createApp(config: Config, routingDependencies: RoutingDependencies = {}) {
   const github = new GitHubService(config.demo);
   const app = express(),
     store = new Store(config.dataDir);
@@ -66,6 +75,29 @@ export function createApp(config: Config) {
   let audioSettings = saved.success ? saved.data : defaults;
   let audio = new AudioService({ ...config, ...audioSettings });
   const models = new AudioModels(config.audioBase, config.demo);
+  const catalog = routingDependencies.catalog || agentModels;
+  const experiments = () => {
+    const saved = experimentsSchema.safeParse(store.setting('experiments'));
+    return saved.success ? saved.data : experimentsOff;
+  };
+  async function checkRouting(agent: string, routing?: RoutingConfig | null) {
+    if (!routing?.enabled) return;
+    if (agent !== 'codex') throw new HttpError(400, 'Il routing JEV è disponibile solo per Codex.');
+    if (!experiments().enabled || !experiments().smartRouting)
+      throw new HttpError(409, 'Abilita JEV nelle impostazioni sperimentali.');
+    if (!config.audioKey && !config.demo)
+      throw new HttpError(409, 'Configura OPENROUTER_API_KEY sul server.');
+    try {
+      validateRouting(routing, await catalog('codex', config.demo));
+    } catch {
+      throw new HttpError(
+        400,
+        'Scegli modelli e livelli di effort dal catalogo Codex disponibile.',
+      );
+    }
+    if (!experiments().enabled || !experiments().smartRouting)
+      throw new HttpError(409, 'Abilita JEV nelle impostazioni sperimentali.');
+  }
   const events = new EventEmitter();
   events.setMaxListeners(100);
   const active = new Map<string, { controller: AbortController; promise: Promise<void> }>();
@@ -195,9 +227,76 @@ export function createApp(config: Config) {
       mcpAccess.servers.push(...browserAccess.servers);
       Object.assign(mcpAccess.env, browserAccess.env);
       skillAccess = await skills.access(chat, runId);
+      let executionChat = chat;
+      if (chat.agent === 'codex' && chat.routing?.enabled) {
+        const currentCatalog = await catalog('codex', config.demo);
+        const flags = experiments();
+        const previousSelection = chat.session_id
+          ? store
+              .runs(chat.id)
+              .filter((run) => run.id !== runId && run.status !== 'queued')
+              .at(-1)?.routing?.selected
+          : undefined;
+        const previous = previousSelection?.model
+          ? { model: previousSelection.model, effort: previousSelection.effort }
+          : undefined;
+        const recent = store.db
+          .prepare(
+            `SELECT m.role,substr(m.text,1,1200) AS text FROM messages m
+          JOIN runs r ON r.id=m.run_id WHERE m.conversation_id=? AND r.status IN ('complete','awaiting_input') AND r.id<>?
+          ORDER BY m.created_at DESC,m.rowid DESC LIMIT 6`,
+          )
+          .all(chat.id, runId)
+          .reverse() as { role: string; text: string }[];
+        const decision = await routeTurn(
+          {
+            config: chat.routing,
+            key: config.audioKey,
+            demo: config.demo,
+            enabled: flags.enabled && flags.smartRouting,
+            signal,
+            prompt,
+            history: recent,
+            hasAttachments: images.length > 0 || documents.length > 0,
+            resumed: !!chat.session_id,
+            previous,
+            catalog: currentCatalog,
+          },
+          routingDependencies,
+        );
+        signal.throwIfAborted();
+        // Settings/manual overrides can change while the decision is in flight.
+        const latest = getChat(chat.id);
+        const currentFlags = experiments();
+        if (JSON.stringify(latest.routing) !== JSON.stringify(chat.routing)) {
+          decision.selected = { model: latest.model, effort: latest.effort };
+          decision.source = 'manual';
+          decision.reason = 'manual';
+        } else if (!currentFlags.enabled || !currentFlags.smartRouting) {
+          decision.selected = chat.routing.fallback;
+          decision.source = 'fallback';
+          decision.reason = 'disabled';
+        }
+        executionChat = {
+          ...chat,
+          model: decision.selected.model,
+          effort: decision.selected.effort,
+        };
+        store.saveRunRouting(runId, decision);
+        const label = `${decision.source === 'jev' ? 'JEV' : decision.source === 'demo' ? 'Demo' : 'Routing'} → ${decision.selected.model || 'Predefinito CLI / sessione'} · ${decision.selected.effort}`;
+        const activity = store.activity(
+          chat.id,
+          runId,
+          label + (decision.reason ? `. ${routingReasons[decision.reason]}` : ''),
+          decision.source === 'fallback' ? 'warning' : 'info',
+        );
+        publish({ type: 'status', conversationId: chat.id, runId, activity });
+        publish({ type: 'changed', conversationId: chat.id });
+      }
+      signal.throwIfAborted();
       await runAgent(
         config,
-        chat,
+        executionChat,
         prompt,
         signal,
         (e) => {
@@ -880,12 +979,32 @@ export function createApp(config: Config) {
     res.json({ ...(await git.view(getChat(chat.id))), blocked: gitBlocked(chat.id) });
   });
   app.get('/api/conversations', (_req, res) => res.json(store.list()));
+  app.get('/api/settings/experiments', (_req, res) =>
+    res.json({ ...experiments(), configured: !!config.audioKey, demo: config.demo }),
+  );
+  app.post('/api/settings/experiments', (req, res) => {
+    const input = experimentsSchema.parse(req.body);
+    store.saveSetting('experiments', input);
+    publish({ type: 'experiments_changed' });
+    res.json({ ...input, configured: !!config.audioKey, demo: config.demo });
+  });
+  app.get('/api/agents/:agent/models', async (req, res) => {
+    res.json(await catalog(z.enum(['claude', 'codex']).parse(req.params.agent), config.demo));
+  });
   app.get('/api/github', async (_req, res) => res.json(await github.info()));
-  app.post('/api/conversations', (req, res) => {
+  app.post('/api/conversations', async (req, res) => {
     const input = chatInput.parse(req.body);
+    await checkRouting(input.agent, input.routing);
     const chat = store.create(input.agent, input.repo || null, input.title, input.tools);
+    if (input.routing) {
+      store.saveRouting(chat.id, input.routing);
+      if (input.routing.enabled)
+        store.db
+          .prepare('UPDATE conversations SET model=?,effort=? WHERE id=?')
+          .run(input.routing.fallback.model, input.routing.fallback.effort, chat.id);
+    }
     publish({ type: 'changed', conversationId: chat.id });
-    res.status(201).json(chat);
+    res.status(201).json(store.conversation(chat.id));
   });
   app.post('/api/conversations/:id/read', (req, res) => {
     const chat = getChat(req.params.id);
@@ -933,11 +1052,24 @@ export function createApp(config: Config) {
     res.status(202).json({ runId });
   });
   app.get('/api/conversations/:id/models', async (req, res) => {
-    res.json(await agentModels(getChat(String(req.params.id)).agent));
+    res.json(await catalog(getChat(String(req.params.id)).agent, config.demo));
+  });
+  app.post('/api/conversations/:id/routing', async (req, res) => {
+    const chat = getChat(String(req.params.id));
+    const routing = routingSchema.nullable().parse(req.body.routing);
+    await checkRouting(chat.agent, routing);
+    store.saveRouting(chat.id, routing);
+    if (routing?.enabled)
+      store.db
+        .prepare('UPDATE conversations SET model=?,effort=? WHERE id=?')
+        .run(routing.fallback.model, routing.fallback.effort, chat.id);
+    publish({ type: 'changed', conversationId: chat.id });
+    res.json(store.conversation(chat.id));
   });
   app.post('/api/conversations/:id/model', (req, res) => {
     const chat = getChat(String(req.params.id));
     const model = modelSchema.parse(req.body.model);
+    if (chat.routing) store.saveRouting(chat.id, { ...chat.routing, enabled: false });
     store.db.prepare('UPDATE conversations SET model=? WHERE id=?').run(model, chat.id);
     publish({ type: 'changed', conversationId: chat.id });
     res.json(store.conversation(chat.id));
@@ -945,6 +1077,7 @@ export function createApp(config: Config) {
   app.post('/api/conversations/:id/effort', (req, res) => {
     const chat = getChat(String(req.params.id));
     const effort = z.enum(effortLevels[chat.agent]).parse(req.body.effort);
+    if (chat.routing) store.saveRouting(chat.id, { ...chat.routing, enabled: false });
     store.db.prepare('UPDATE conversations SET effort=? WHERE id=?').run(effort, chat.id);
     publish({ type: 'changed', conversationId: chat.id });
     res.json(store.conversation(chat.id));

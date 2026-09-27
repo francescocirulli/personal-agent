@@ -1,3 +1,4 @@
+import { SettingsTabs, type SettingsTab } from './SettingsTabs';
 import type { MarkdownDocument } from './markdown';
 import { useEffect, useState } from 'react';
 import { X, Plus, Trash2, Pencil, FileText } from 'lucide-react';
@@ -23,7 +24,7 @@ export function SkillsSettings({
   selected: string | null;
   onClose(): void;
   onRead(document: MarkdownDocument): void;
-  onTab(tab: 'voice' | 'mcp' | 'terminal'): void;
+  onTab(tab: SettingsTab): void;
 }) {
   const [globals, setGlobals] = useState<SkillView[]>([]);
   const [projectId, setProjectId] = useState(
@@ -116,16 +117,7 @@ export function SkillsSettings({
           <X size={20} />
         </button>
         <h2 id="skills-heading">Skill</h2>
-        <nav className="settings-tabs" aria-label="Sezioni impostazioni">
-          <button disabled={pending} onClick={() => onTab('voice')}>
-            Voce
-          </button>
-          <button disabled={pending} onClick={() => onTab('mcp')}>
-            MCP
-          </button>
-          <button aria-current="page">Skill</button>
-          <button onClick={() => onTab('terminal')}>Terminale</button>
-        </nav>
+        <SettingsTabs current="skills" onTab={onTab} disabled={pending} />
         {error && (
           <p role="alert" className="form-error">
             {error}

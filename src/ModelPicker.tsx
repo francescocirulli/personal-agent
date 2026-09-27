@@ -3,8 +3,32 @@ import { useEffect, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { api, type Chat } from './api';
 import { AgentLogo } from './AgentLogo';
+import type { ExperimentView } from '../server/experiments';
 
 export function ModelPicker({ chat, onSaved }: { chat: Chat; onSaved(): Promise<void> }) {
+  const [experiments, setExperiments] = useState<ExperimentView>();
+  useEffect(() => {
+    let disposed = false;
+    async function refresh() {
+      try {
+        const next = await api<ExperimentView>('/settings/experiments');
+        if (!disposed) setExperiments(next);
+      } catch {
+        if (!disposed) setExperiments(undefined);
+      }
+    }
+    if (chat.routing?.enabled) void refresh();
+    window.addEventListener('experiments-change', refresh);
+    return () => {
+      disposed = true;
+      window.removeEventListener('experiments-change', refresh);
+    };
+  }, [chat.routing?.enabled]);
+  const automatic =
+    chat.routing?.enabled &&
+    experiments?.enabled &&
+    experiments.smartRouting &&
+    (experiments.configured || experiments.demo);
   const [catalog, setCatalog] = useState<{
     models: { id: string; name: string }[];
     source: string;
@@ -62,12 +86,25 @@ export function ModelPicker({ chat, onSaved }: { chat: Chat; onSaved(): Promise<
           <span className="model-picker-agent">
             {chat.agent === 'claude' ? 'Claude Code' : 'Codex'}
           </span>
-          <span className="model-picker-name">{modelName}</span>
-          <span className="model-picker-effort">{chat.effort ?? defaultEffort}</span>
+          <span className="model-picker-name">
+            {automatic
+              ? 'Automatico · JEV'
+              : chat.routing?.enabled
+                ? `JEV sospeso · ${modelName}`
+                : modelName}
+          </span>
+          <span className="model-picker-effort">
+            {automatic ? 'effort auto' : (chat.effort ?? defaultEffort)}
+          </span>
         </span>
         <ChevronDown size={16} aria-hidden="true" />
       </summary>
       <div className="model-picker-panel">
+        <p className="settings-note">
+          {chat.routing?.enabled
+            ? `Riserva: ${modelName} · ${chat.effort}. Una scelta manuale disattiva JEV.`
+            : 'Le modifiche si applicano dal prossimo messaggio.'}
+        </p>
         <label>
           Modello
           <select

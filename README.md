@@ -7,6 +7,7 @@ The backend runs the official agent CLIs with your own subscription logins. Opti
 ## Features
 
 - Persistent conversations, resumable CLI sessions, per-chat model and reasoning effort.
+- Optional experimental JEV routing between Codex models and reasoning efforts, using your Codex subscription for execution.
 - Background tasks, message queues, cancellation, conversation forks, and searchable history.
 - GitHub repository selection, independent checkouts per chat, branch switching, and readable diffs.
 - Voice input and playback, optional Web Push notifications, and mobile-friendly Markdown.
@@ -154,6 +155,33 @@ Store `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, and a real `VAPID_SUBJECT` (for e
 
 **Skills:** manage global skill instructions in settings and select which agents and chats can use them. New chats inherit globally available MCP connections but start with global skills unselected. Repository skills remain available from their project directories.
 
+**Experimental Codex routing:** configure `OPENROUTER_API_KEY`, then enable experimental
+features and JEV under **Impostazioni → Sperimentali**. In a new Codex chat, expand
+**Funzionalità sperimentali** below the MCP/skills picker and select JEV, allowed models
+and efforts, and an explicit fallback pair. Existing chats have the same controls.
+The server reads its local Codex model catalog (`AGENT_CODEX_HOME/models_cache.json`,
+or `~/.codex/models_cache.json`); use the authenticated Codex CLI on that server to
+refresh it if unavailable. Only visible GPT models with known supported efforts and
+text input are eligible. Catalog presence is not a guarantee of subscription access.
+
+JEV uses OpenRouter's Decisions API to choose a model/effort pair before each turn.
+It sends a bounded amount of recent chat text to OpenRouter/TypeSafe and incurs a
+separate small API charge. All agent work continues through the official Codex CLI
+with subscription authentication; there is no paid model API fallback when your
+subscription reaches its limits. The routing endpoint is fixed and independent of
+`AUDIO_BASE_URL`. Claude Code routing is not available yet.
+
+Global switches and per-chat selection must both be on. Global disablement takes
+precedence for pending and future turns; already executing CLI work continues.
+Re-enabling restores opted-in chats. Selecting a manual model or effort disables JEV
+for that chat. Decisions are stored per run and shown with replies. If JEV times out
+(2 seconds), is uncertain, returns an invalid answer, or the catalog is unavailable,
+the turn uses the saved fallback pair. Requests with attachments or over 9,000
+characters also use the fallback. Resume routing avoids switching to smaller or
+unknown context windows; it does not inspect the CLI's full tool history. A failed
+CLI run is never automatically replayed on another model. In `DEMO_MODE`, model
+choices and responses are explicitly simulated, with no JEV or agent API calls.
+
 ## Configuration reference
 
 Environment variables are read at server startup. Restart local development or recreate the container after changing them. Docker Compose reads dotenv quoting; do not assume `docker run --env-file .env` handles quotes the same way.
@@ -171,7 +199,7 @@ Environment variables are read at server startup. Restart local development or r
 | `CLAUDE_CODE_OAUTH_TOKEN`                | Empty                                       | Claude subscription token for the official CLI.                                               |
 | `AGENT_CODEX_HOME`                       | Unset                                       | Dedicated Codex state directory; image uses `/data/home/.codex`.                              |
 | `GH_TOKEN`                               | Unset                                       | Optional GitHub credential for repository operations.                                         |
-| `OPENROUTER_API_KEY`                     | Empty                                       | Optional audio API credential.                                                                |
+| `OPENROUTER_API_KEY`                     | Empty                                       | Optional audio and experimental JEV decision API credential.                                  |
 | `AUDIO_BASE_URL`                         | `https://openrouter.ai/api/v1`              | Audio API base URL.                                                                           |
 | `STT_MODEL`                              | `openai/gpt-4o-transcribe`                  | Default transcription model.                                                                  |
 | `TTS_MODEL` / `TTS_VOICE`                | `google/gemini-3.8-flash-lite-tts` / `Kore` | Default speech model and voice.                                                               |

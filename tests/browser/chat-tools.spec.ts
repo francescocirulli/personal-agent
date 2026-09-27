@@ -31,7 +31,7 @@ test('new chat customizes globally enabled tools without changing other chats', 
     await page.goto('/');
     await page.getByRole('button', { name: 'Inizia una conversazione' }).click();
     const modal = page.getByRole('dialog', { name: 'Nuova chat' });
-    await modal.locator('summary').click();
+    await modal.locator('.chat-tools-picker > summary').click();
     const inheritMcp = modal.getByRole('checkbox', {
       name: 'Usa disponibilità globali · MCP',
       exact: true,
@@ -73,7 +73,7 @@ test('new chat customizes globally enabled tools without changing other chats', 
     );
     await page.getByRole('button', { name: 'Nuova chat', exact: true }).last().click();
     await modal.getByRole('button', { name: 'Codex', exact: true }).click();
-    await modal.locator('summary').click();
+    await modal.locator('.chat-tools-picker > summary').click();
     await expect(inheritMcp).toBeChecked();
     await expect(inheritSkills).not.toBeChecked();
     await expect(modal.getByRole('checkbox', { name, exact: true })).not.toBeChecked();

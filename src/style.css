@@ -2045,7 +2045,7 @@ button svg {
 }
 .settings-tabs {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(85px, 1fr));
   gap: 4px;
   margin: 0 0 24px;
   padding: 4px;
@@ -4243,4 +4243,61 @@ button svg {
 .diff-patch.diff-wrap span {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+/* Experimental settings remain usable on narrow mobile screens. */
+.chat-experiments {
+  padding: 0 16px 12px;
+  max-height: min(45dvh, 420px);
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+.chat-experiments-picker {
+  margin: 12px 0;
+  font-size: 0.88rem;
+}
+.chat-experiments-picker summary {
+  cursor: pointer;
+  padding: 10px 0;
+}
+.routing-options {
+  border: 0;
+  padding: 0;
+  margin: 10px 0;
+  min-width: 0;
+}
+.routing-options > label {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0;
+}
+.routing-options select {
+  max-width: 100%;
+  width: 100%;
+  min-width: 0;
+  padding: 8px;
+}
+.routing-model {
+  margin: 14px 0;
+}
+.routing-model > small,
+.routing-badge > small {
+  display: block;
+  margin-top: 4px;
+}
+.routing-efforts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+}
+.routing-efforts label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 44px;
+}
+.routing-badge {
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+  opacity: 0.85;
 }

@@ -54,6 +54,23 @@ An explicit final-response marker, `<richiesta_input/>`, records a real need for
 
 Forking a conversation copies history and attachments up to the selected response, agent/model/effort, repository, and tool selection. It does not copy the CLI session, browser session, queue, or uncommitted workspace state. The new chat gets its own workspace and seeds a new CLI session from the copied history.
 
+Experimental Codex routing is gated by global experimental/JEV flags and per-chat
+configuration. `server/smart-routing.ts` makes a bounded, cancellable OpenRouter
+Decisions request before spawning the CLI. It selects from validated model/effort
+pairs in the local Codex catalog; subscription execution and CLI session resume stay
+in the existing runner. The chat's saved model/effort remains its explicit fallback,
+and the choice is applied only to the current run. Configuration is rechecked after
+the decision so global disablement and manual overrides win before execution.
+
+Chat routing configuration lives in an additive `conversations.routing` column;
+per-run decisions live in `run_routing`, with cascading deletion. Forks copy the
+configuration and historical decision annotations but do not inherit the CLI session.
+Only completed conversational context is sent to JEV, excluding later queued input,
+attachments, raw tool output, and credentials. Decision telemetry records the
+requested pair, bounded probabilities, cost, and fallback reason without duplicating
+the prompt. It does not claim provider-confirmed execution or task success. Demo
+mode performs no routing requests. Claude routing is rejected when enabled.
+
 ## Storage and operations
 
 `DATA_DIR` contains `agent.sqlite` (WAL mode), workspaces, audio, browser state/screenshots, tool connection state, and temporary run files. In Docker it is `/data`, with the CLI home at `/data/home` and installed tools at `/data/tools`. Attachments and conversation state persist in SQLite; OAuth state and tokens also live in private MCP files. Back up the entire volume and the separate deployment environment, not just the main SQLite file.

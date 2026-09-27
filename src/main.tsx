@@ -1,3 +1,7 @@
+import { SettingsTabs, type SettingsTab } from './SettingsTabs';
+import { ExperimentalSettings } from './ExperimentalSettings';
+import { ChatExperiments, ChatExperimentsPicker } from './ChatExperimentsPicker';
+import { routingReasons, type RoutingConfig } from '../server/experiments';
 import { DiffPanel } from './DiffPanel';
 import { WorkStatus, StatusBadge, currentWork } from './WorkStatus';
 import type { MarkdownDocument } from './markdown';
@@ -101,26 +105,32 @@ function App() {
     [sending, setSending] = useState(false),
     [creating, setCreating] = useState(false);
   const [repoRequired, setRepoRequired] = useState(false);
+  const [chatRouting, setChatRouting] = useState<RoutingConfig | null>(null);
   const [chatTools, setChatTools] = useState<ChatTools>({ mcp: null, skills: [] });
   useEffect(() => {
-    if (create) setChatTools({ mcp: null, skills: [] });
+    if (create) {
+      setChatTools({ mcp: null, skills: [] });
+      setChatRouting(null);
+    }
   }, [create]);
   const [chatMenu, setChatMenu] = useState<Chat | null>(null),
     [chatAction, setChatAction] = useState<'rename' | 'delete' | null>(null),
     [chatTitle, setChatTitle] = useState(''),
     [actionPending, setActionPending] = useState(false),
     [actionError, setActionError] = useState('');
-  const [preferencesTab, setPreferencesTab] = useState<'voice' | 'mcp' | 'skills' | 'terminal'>(
-    new URLSearchParams(location.search).get('settings') === 'terminal'
-      ? 'terminal'
-      : new URLSearchParams(location.search).get('settings') === 'skills'
-        ? 'skills'
-        : new URLSearchParams(location.search).get('settings') === 'mcp'
-          ? 'mcp'
-          : 'voice',
+  const [preferencesTab, setPreferencesTab] = useState<SettingsTab>(
+    new URLSearchParams(location.search).get('settings') === 'experiments'
+      ? 'experiments'
+      : new URLSearchParams(location.search).get('settings') === 'terminal'
+        ? 'terminal'
+        : new URLSearchParams(location.search).get('settings') === 'skills'
+          ? 'skills'
+          : new URLSearchParams(location.search).get('settings') === 'mcp'
+            ? 'mcp'
+            : 'voice',
   );
   const [preferencesOpen, setPreferencesOpen] = useState(
-      ['mcp', 'skills', 'terminal'].includes(
+      ['mcp', 'skills', 'terminal', 'experiments'].includes(
         new URLSearchParams(location.search).get('settings') || '',
       ),
     ),
@@ -226,7 +236,7 @@ function App() {
       setActionPending(false);
     }
   }
-  async function openPreferences(tab: 'voice' | 'mcp' | 'skills' | 'terminal' = 'voice') {
+  async function openPreferences(tab: SettingsTab = 'voice') {
     stopVoice();
     setSidebar(false);
     setPreferencesOpen(true);
@@ -363,6 +373,7 @@ function App() {
         window.dispatchEvent(new Event('browser-change'));
         return;
       }
+      if (e.type === 'experiments_changed') window.dispatchEvent(new Event('experiments-change'));
       if (e.type === 'mcp_changed') {
         window.dispatchEvent(new Event('mcp-change'));
         return;
@@ -549,6 +560,7 @@ function App() {
         agent,
         repo: repo.trim() || null,
         tools: chatTools,
+        routing: agent === 'codex' ? chatRouting : null,
       });
       setCreate(false);
       setRepo('');
@@ -1025,6 +1037,7 @@ function App() {
           onVoiceSettings={() => void openPreferences('voice')}
           onSkillsSettings={() => void openPreferences('skills')}
           onTerminalSettings={() => void openPreferences('terminal')}
+          onExperimentalSettings={() => void openPreferences('experiments')}
           beforeOpen={stopVoice}
         />
         {current && !preferencesOpen && (
@@ -1078,6 +1091,7 @@ function App() {
               </h1>
               <ModelPicker key={current.id} chat={current} onSaved={() => refresh(current.id)} />
             </div>
+            <ChatExperiments key={current.id} chat={current} onSaved={() => refresh(current.id)} />
             <div className="messages" aria-live="polite">
               {!current.messages.length && !working && (
                 <div className="empty-chat">
@@ -1111,6 +1125,27 @@ function App() {
                       })}
                     </time>
                   </div>
+                  {message.role === 'assistant' &&
+                    (() => {
+                      const route = current.runs.find((run) => run.id === message.run_id)?.routing;
+                      return (
+                        route && (
+                          <p
+                            className="routing-badge"
+                            title="Modello ed effort richiesti alla CLI per questo turno"
+                          >
+                            {route.source === 'jev'
+                              ? 'JEV'
+                              : route.source === 'demo'
+                                ? 'Demo'
+                                : 'Routing'}{' '}
+                            → {route.selected.model || 'Predefinito CLI / sessione'} ·{' '}
+                            {route.selected.effort}
+                            {route.reason && <small>{routingReasons[route.reason]}</small>}
+                          </p>
+                        )
+                      );
+                    })()}
                   {!!message.attachments?.length && (
                     <div className="image-attachments">
                       {message.attachments
@@ -1457,6 +1492,12 @@ function App() {
           </section>
         </div>
       )}
+      {preferencesOpen && preferencesTab === 'experiments' && (
+        <ExperimentalSettings
+          onClose={() => setPreferencesOpen(false)}
+          onTab={(tab) => void openPreferences(tab)}
+        />
+      )}
       {preferencesOpen && preferencesTab === 'terminal' && (
         <React.Suspense
           fallback={
@@ -1499,12 +1540,11 @@ function App() {
             </button>
             <div className="eyebrow">IMPOSTAZIONI</div>
             <h2 id="preferences-title">Impostazioni voce</h2>
-            <nav className="settings-tabs" aria-label="Sezioni impostazioni">
-              <button aria-current="page">Voce</button>
-              <button onClick={() => void openPreferences('mcp')}>MCP</button>
-              <button onClick={() => void openPreferences('skills')}>Skill</button>
-              <button onClick={() => void openPreferences('terminal')}>Terminale</button>
-            </nav>
+            <SettingsTabs
+              current="voice"
+              onTab={(tab) => void openPreferences(tab)}
+              disabled={preferencesPending}
+            />
             <button className="soft-button" onClick={openNotifications}>
               <Bell size={16} /> Notifiche
             </button>
@@ -1644,7 +1684,10 @@ function App() {
                     aria-label={agentName(a)}
                     aria-pressed={agent === a}
                     className={agent === a ? 'chosen' : ''}
-                    onClick={() => setAgent(a)}
+                    onClick={() => {
+                      setAgent(a);
+                      setChatRouting(null);
+                    }}
                   >
                     <AgentLogo agent={a} />
                     <strong>{agentName(a)}</strong>
@@ -1663,6 +1706,12 @@ function App() {
                 agent={agent}
                 value={chatTools}
                 onChange={setChatTools}
+                disabled={creating}
+              />
+              <ChatExperimentsPicker
+                agent={agent}
+                value={chatRouting}
+                onChange={setChatRouting}
                 disabled={creating}
               />
               <button

@@ -1,3 +1,4 @@
+import { SettingsTabs } from './SettingsTabs';
 import { useEffect, useState } from 'react';
 import { ExternalLink, Plug, Trash2, X } from 'lucide-react';
 import { api } from './api';
@@ -10,6 +11,7 @@ export function McpConnections({
   onVoiceSettings,
   onSkillsSettings,
   onTerminalSettings,
+  onExperimentalSettings,
   beforeOpen,
   showSummary = true,
 }: {
@@ -19,6 +21,7 @@ export function McpConnections({
   onVoiceSettings(): void;
   onSkillsSettings(): void;
   onTerminalSettings(): void;
+  onExperimentalSettings(): void;
   beforeOpen(): void;
   showSummary?: boolean;
 }) {
@@ -141,12 +144,15 @@ export function McpConnections({
               <X size={20} />
             </button>
             <h2 id="mcp-heading">Collegamenti MCP</h2>
-            <nav className="settings-tabs" aria-label="Sezioni impostazioni">
-              <button onClick={onVoiceSettings}>Voce</button>
-              <button aria-current="page">MCP</button>
-              <button onClick={onSkillsSettings}>Skill</button>
-              <button onClick={onTerminalSettings}>Terminale</button>
-            </nav>
+            <SettingsTabs
+              current="mcp"
+              onTab={(tab) => {
+                if (tab === 'voice') onVoiceSettings();
+                if (tab === 'skills') onSkillsSettings();
+                if (tab === 'terminal') onTerminalSettings();
+                if (tab === 'experiments') onExperimentalSettings();
+              }}
+            />
             <p>
               Gestisci e abilita i servizi per Claude Code e Codex. Ogni nuova chat può usare le
               disponibilità globali oppure una selezione personalizzata.

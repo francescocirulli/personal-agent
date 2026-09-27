@@ -1,4 +1,5 @@
 import type { Effort } from './agent-effort';
+import type { RoutingConfig, RoutingRecord } from './experiments';
 import type { ChatTools } from './chat-tools';
 import type { ChatImage } from './images';
 import type { ChatFile } from './files';
@@ -18,6 +19,7 @@ export type RunStatus =
   | 'interrupted'
   | 'awaiting_input';
 export interface Conversation {
+  routing?: RoutingConfig | null;
   tools?: ChatTools;
   id: string;
   title: string;
@@ -47,6 +49,7 @@ export interface Message {
   created_at: number;
 }
 export interface Run {
+  routing?: RoutingRecord;
   id: string;
   conversation_id: string;
   status: RunStatus;
@@ -81,7 +84,15 @@ export class Store {
       CREATE TABLE IF NOT EXISTS subscriptions (endpoint TEXT PRIMARY KEY, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, expires INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS run_routing (run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE, data TEXT NOT NULL);
     `);
+    if (
+      !this.db
+        .prepare('PRAGMA table_info(conversations)')
+        .all()
+        .some((c) => c.name === 'routing')
+    )
+      this.db.exec('ALTER TABLE conversations ADD COLUMN routing TEXT');
     if (
       !this.db
         .prepare('PRAGMA table_info(conversations)')
@@ -183,6 +194,7 @@ export class Store {
     return rows.map(({ active_status, latest_status, queued_count, ...chat }) => ({
       ...chat,
       tools: this.decodeTools(chat.tools),
+      routing: this.decodeRouting(chat.routing),
       status:
         active_status ||
         (latest_status === 'awaiting_input'
@@ -209,11 +221,30 @@ export class Store {
   conversation(id: string) {
     const row = this.db.prepare('SELECT * FROM conversations WHERE id=?').get(id);
     return row
-      ? ({ ...row, tools: this.decodeTools(row.tools) } as unknown as Conversation)
+      ? ({
+          ...row,
+          tools: this.decodeTools(row.tools),
+          routing: this.decodeRouting(row.routing),
+        } as unknown as Conversation)
       : undefined;
   }
   private decodeTools(value: unknown): ChatTools {
     return typeof value === 'string' ? JSON.parse(value) : { mcp: null, skills: null };
+  }
+  private decodeRouting(value: unknown): RoutingConfig | null {
+    return typeof value === 'string' ? JSON.parse(value) : null;
+  }
+  saveRouting(id: string, routing: RoutingConfig | null) {
+    this.db
+      .prepare('UPDATE conversations SET routing=? WHERE id=?')
+      .run(routing ? JSON.stringify(routing) : null, id);
+  }
+  saveRunRouting(runId: string, routing: RoutingRecord) {
+    this.db
+      .prepare(
+        'INSERT INTO run_routing VALUES (?,?) ON CONFLICT(run_id) DO UPDATE SET data=excluded.data',
+      )
+      .run(runId, JSON.stringify(routing));
   }
   create(
     agent: Agent,
@@ -313,6 +344,7 @@ export class Store {
       this.db
         .prepare('UPDATE conversations SET model=?,effort=?,title_custom=1 WHERE id=?')
         .run(source.model, source.effort, chat.id);
+      this.saveRouting(chat.id, source.routing || null);
       const runs = new Map<string, string>();
       for (const message of history.slice(0, index + 1)) {
         let runId = runs.get(message.run_id);
@@ -330,6 +362,11 @@ export class Store {
               original.created_at,
               original.updated_at,
             );
+          this.db
+            .prepare(
+              'INSERT INTO run_routing(run_id,data) SELECT ?,data FROM run_routing WHERE run_id=?',
+            )
+            .run(runId, message.run_id);
         }
         const id = this.writeMessage(
           chat.id,
@@ -393,8 +430,14 @@ export class Store {
   }
   runs(id: string) {
     return this.db
-      .prepare('SELECT * FROM runs WHERE conversation_id=? ORDER BY created_at,rowid')
-      .all(id) as unknown as Run[];
+      .prepare(
+        'SELECT r.*,j.data AS routing FROM runs r LEFT JOIN run_routing j ON j.run_id=r.id WHERE conversation_id=? ORDER BY created_at,r.rowid',
+      )
+      .all(id)
+      .map(({ routing, ...run }) => ({
+        ...run,
+        ...(typeof routing === 'string' ? { routing: JSON.parse(routing) } : {}),
+      })) as unknown as Run[];
   }
   activities(id: string) {
     return this.db

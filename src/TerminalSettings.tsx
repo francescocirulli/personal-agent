@@ -1,3 +1,4 @@
+import { SettingsTabs, type SettingsTab } from './SettingsTabs';
 import { TerminalBrowser } from './TerminalBrowser';
 import { useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
@@ -15,7 +16,7 @@ export default function TerminalSettings({
 }: {
   chats: Chat[];
   onClose(): void;
-  onTab(tab: 'voice' | 'mcp' | 'skills'): void;
+  onTab(tab: SettingsTab): void;
 }) {
   const [browserUrl, setBrowserUrl] = useState<string | null>(null);
   const seenBrowserRequest = useRef(0);
@@ -230,12 +231,7 @@ export default function TerminalSettings({
         {browserUrl !== null && (
           <TerminalBrowser initialUrl={browserUrl} onClose={() => setBrowserUrl(null)} />
         )}
-        <nav className="settings-tabs" aria-label="Sezioni impostazioni">
-          <button onClick={() => onTab('voice')}>Voce</button>
-          <button onClick={() => onTab('mcp')}>MCP</button>
-          <button onClick={() => onTab('skills')}>Skill</button>
-          <button aria-current="page">Terminale</button>
-        </nav>
+        <SettingsTabs current="terminal" onTab={onTab} disabled={pending} />
         <p>
           Comandi nell’ambiente degli agenti. Puoi installare CLI, fare login e lavorare sui file.
         </p>

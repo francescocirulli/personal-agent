@@ -205,8 +205,10 @@ test('Git changes reject dirty files, invalid refs, duplicates, active runs and 
     );
     assert.match((await (await f.request(route)).json()).blocked, /task/);
     await f.request(base + '/cancel', {});
-    for (let i = 0; i < 100 && f.store.runs(f.chat.id).some((r) => r.status === 'running'); i++)
+    // Cancellation is recorded before asynchronous resource cleanup releases the chat.
+    for (let i = 0; i < 100 && (await (await f.request(route)).json()).blocked; i++)
       await delay(25);
+    assert.equal((await (await f.request(route)).json()).blocked, null);
     const count = f.store.messages(f.chat.id).length;
     assert.equal(
       (await f.request(route, { action: 'create', name: 'ready', base: 'HEAD' })).status,
