@@ -731,25 +731,6 @@ button svg {
   line-height: 1.5;
   margin: 8px 0 0;
 }
-.run-progress {
-  background: #f3f3f3;
-  padding: 17px;
-  border: 1px solid #e6e6e6;
-  border-radius: 10px;
-  margin: 18px 0;
-  font-size: 12px;
-}
-.run-progress > div:first-child {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  color: #737373;
-}
-.run-progress > p {
-  color: #9f9f9f;
-  font-size: 11px;
-  margin: 10px 0 5px;
-}
 .preview {
   margin-top: 18px;
   color: #848484;
@@ -1512,13 +1493,6 @@ button svg {
 }
 .voice-button:hover {
   background: #3e3e3e;
-}
-.run-progress {
-  background: #262626;
-  border-color: #434343;
-}
-.run-progress > div:first-child {
-  color: #d0d0d0;
 }
 .preview {
   color: #b9b9b9;
@@ -3936,7 +3910,7 @@ button svg {
   justify-content: space-between;
   gap: 8px;
 }
-.work-status p {
+.work-status > p {
   font-size: 14px;
   line-height: 1.5;
   margin: 10px 0;
@@ -3945,7 +3919,8 @@ button svg {
   color: #bbb;
   font-size: 12px;
 }
-.work-status > button {
+.work-status > button,
+.work-changes > button {
   display: block;
   min-height: 44px;
   padding: 8px 12px;
@@ -3971,4 +3946,54 @@ button svg {
   .composer-bottom .repo-branch-button {
     max-width: calc(100% - 110px);
   }
+}
+
+.work-status > .activity {
+  margin: 12px -14px -14px;
+  border: 0;
+  border-top: 1px solid #464b48;
+  border-radius: 0 0 12px 12px;
+}
+.work-changes {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.work-changes > button {
+  margin-top: 0;
+}
+.diff-reading {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 4px 10px 8px;
+  border-bottom: 1px solid #454a47;
+}
+.diff-reading button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 6px 10px;
+  border: 1px solid #454a47;
+  border-radius: 8px;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.diff-reading button[aria-pressed='true'] {
+  background: #38443c;
+  color: #e2eee6;
+}
+.diff-patch.diff-wrap code {
+  width: 100%;
+}
+.diff-patch.diff-wrap span {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }

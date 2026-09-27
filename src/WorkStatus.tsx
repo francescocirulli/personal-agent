@@ -11,6 +11,9 @@ import {
 import type { Run, RunStatus } from '../server/store';
 import type { Detail } from './api';
 import { busy } from './api';
+import { ActivityPanel } from './ActivityPanel';
+import { ChatMarkdown } from './ChatMarkdown';
+import { useWorkChanges, type DiffMode } from './useWorkChanges';
 export const statusLabels: Record<RunStatus, string> = {
   queued: 'In coda',
   transcribing: 'Trascrizione',
@@ -70,12 +73,24 @@ export function WorkStatus({
   chat,
   connected,
   onChanges,
+  sending,
+  preview,
+  activityOpen,
+  onActivityOpenChange,
+  onStop,
 }: {
   chat: Detail;
   connected: boolean;
-  onChanges(): void;
+  onChanges(mode: DiffMode): void;
+  sending: boolean;
+  preview: string;
+  activityOpen: boolean;
+  onActivityOpenChange(open: boolean): void;
+  onStop(): void;
 }) {
   const run = currentWork(chat.runs);
+  const working = sending || busy(run?.status);
+  const changes = useWorkChanges(chat);
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     if (!run || (!busy(run.status) && run.status !== 'queued')) return;
@@ -83,49 +98,80 @@ export function WorkStatus({
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [run?.id, run?.status]);
-  if (!run) return null;
-  const activity = chat.activity.filter((a) => a.run_id === run.id).at(-1);
+  if (!run && !sending && !chat.activity.length && !changes) return null;
+  const activity = chat.activity.filter((a) => a.run_id === run?.id).at(-1);
   return (
     <section className="work-status" aria-label="Stato del lavoro">
-      <div className="work-status-heading">
-        <StatusBadge status={run.status} paused={!!chat.queue_paused} />
-        <small>
-          {run.status === 'queued' ? 'In attesa da ' : 'Durata '}
-          {duration(
-            (busy(run.status) || run.status === 'queued' ? now : run.updated_at) - run.created_at,
-          )}
-        </small>
-      </div>
+      {run && (
+        <div className="work-status-heading">
+          <StatusBadge status={run.status} paused={!!chat.queue_paused} />
+          <small>
+            {run.status === 'queued' ? 'In attesa da ' : 'Durata '}
+            {duration(
+              (busy(run.status) || run.status === 'queued' ? now : run.updated_at) - run.created_at,
+            )}
+          </small>
+        </div>
+      )}
       {!connected && <p>Connessione assente: lo stato verrà aggiornato alla riconnessione.</p>}
-      {run.status === 'queued' ? (
+      {sending ? (
+        <p>Invio il messaggio…</p>
+      ) : run?.status === 'queued' ? (
         <p>
           {chat.queue_paused
             ? 'La coda è in pausa. Puoi riprenderla dal pannello Coda.'
             : 'La richiesta partirà appena si libera un agente.'}
         </p>
-      ) : run.status === 'awaiting_input' ? (
+      ) : run?.status === 'awaiting_input' ? (
         <p>Rispondi alla domanda nella chat per proseguire. Gli altri messaggi restano in pausa.</p>
-      ) : run.error ? (
+      ) : run?.error ? (
         <p>{run.error}</p>
-      ) : activity && busy(run.status) ? (
+      ) : !preview && activity && busy(run?.status) ? (
         <p>Ultima attività: {activity.text}</p>
-      ) : run.status === 'transcribing' ? (
+      ) : run?.status === 'transcribing' ? (
         <p>Trascrizione del messaggio vocale in corso.</p>
-      ) : run.status === 'running' ? (
+      ) : !preview && run?.status === 'running' ? (
         <p>L’agente sta lavorando alla richiesta.</p>
       ) : null}
-      {run.status === 'complete' && (
+      {working && preview && (
+        <div className="preview">
+          <ChatMarkdown text={preview} />
+        </div>
+      )}
+      {working && (
+        <>
+          <p>Puoi cambiare chat. Il lavoro continua.</p>
+          <button type="button" onClick={onStop}>
+            <Square size={12} /> Ferma task
+          </button>
+        </>
+      )}
+      {!sending && run?.status === 'complete' && (
         <p>Esecuzione terminata. Le verifiche effettuate sono descritte nella risposta.</p>
       )}
-      {!!chat.queue.length && run.status !== 'queued' && (
+      {!!chat.queue.length && run?.status !== 'queued' && (
         <small>
           {chat.queue.length} messaggi in coda{chat.queue_paused ? ' · in pausa' : ''}
         </small>
       )}
-      {(chat.repo || chat.workspace) && (
-        <button type="button" onClick={onChanges}>
-          Apri modifiche
-        </button>
+      {changes && (
+        <div className="work-changes">
+          <button type="button" onClick={() => onChanges(changes.mode)}>
+            Apri modifiche ({changes.total})
+          </button>
+          <small>
+            {changes.mode === 'local'
+              ? 'Modifiche locali'
+              : `Confronto con ${changes.base?.replace(/^refs\/(heads|remotes)\//, '') || 'il branch di base'}`}
+          </small>
+        </div>
+      )}
+      {!!chat.activity.length && (
+        <ActivityPanel
+          activity={chat.activity}
+          open={activityOpen}
+          onOpenChange={onActivityOpenChange}
+        />
       )}
     </section>
   );

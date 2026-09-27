@@ -1,6 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, ChevronLeft, RefreshCw, FileDiff as FileDiffIcon } from 'lucide-react';
+import {
+  X,
+  ChevronLeft,
+  RefreshCw,
+  FileDiff as FileDiffIcon,
+  Minus,
+  Plus,
+  WrapText,
+} from 'lucide-react';
 import { api, type Chat } from './api';
 import type { DiffView, FileDiff } from '../server/git-diff';
 
@@ -18,11 +26,13 @@ export function DiffPanel({
   open,
   onClose,
   running,
+  initialMode,
 }: {
   chat: Chat;
   open: boolean;
   onClose(): void;
   running: boolean;
+  initialMode?: 'local' | 'branch';
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [mode, setMode] = useState<'local' | 'branch'>('local');
@@ -41,6 +51,31 @@ export function DiffPanel({
   const [loading, setLoading] = useState(false);
   const [revision, setRevision] = useState(0);
   const back = useRef<HTMLButtonElement>(null);
+  const [reading, setReading] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('diff-reading') || '{}');
+      return {
+        zoom: Number.isFinite(saved.zoom) ? Math.max(80, Math.min(200, saved.zoom)) : 100,
+        wrap: saved.wrap === true,
+      };
+    } catch {
+      return { zoom: 100, wrap: false };
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem('diff-reading', JSON.stringify(reading));
+    } catch {
+      /* Optional preference. */
+    }
+  }, [reading]);
+  useEffect(() => {
+    if (open && initialMode) {
+      setMode(initialMode);
+      setFile('');
+      setView(undefined);
+    }
+  }, [open, initialMode]);
   useEffect(() => {
     if (!open) return;
     const previous = document.activeElement as HTMLElement | null;
@@ -122,6 +157,7 @@ export function DiffPanel({
     setView(undefined);
     try {
       localStorage.setItem(`diff-base:${chat.id}`, value);
+      window.dispatchEvent(new Event('git-change'));
     } catch {
       /* Optional preference. */
     }
@@ -152,6 +188,41 @@ export function DiffPanel({
             <X size={22} />
           </button>
         </header>
+        {!!file && (
+          <div className="diff-reading" role="group" aria-label="Lettura del codice">
+            <button
+              type="button"
+              aria-label="Riduci zoom"
+              disabled={reading.zoom <= 80}
+              onClick={() => setReading((r) => ({ ...r, zoom: Math.max(80, r.zoom - 20) }))}
+            >
+              <Minus size={18} />
+            </button>
+            <button
+              type="button"
+              aria-label="Ripristina zoom"
+              title="Ripristina zoom al 100%"
+              onClick={() => setReading((r) => ({ ...r, zoom: 100 }))}
+            >
+              {reading.zoom}%
+            </button>
+            <button
+              type="button"
+              aria-label="Aumenta zoom"
+              disabled={reading.zoom >= 200}
+              onClick={() => setReading((r) => ({ ...r, zoom: Math.min(200, r.zoom + 20) }))}
+            >
+              <Plus size={18} />
+            </button>
+            <button
+              type="button"
+              aria-pressed={reading.wrap}
+              onClick={() => setReading((r) => ({ ...r, wrap: !r.wrap }))}
+            >
+              <WrapText size={18} /> A capo
+            </button>
+          </div>
+        )}
         <div className="branch-sheet-scroll">
           <p className="diff-repository">
             {chat.repo || 'Repository locale'} ·{' '}
@@ -273,7 +344,13 @@ export function DiffPanel({
                 <p role="status">Anteprima limitata: il contenuto completo non è visualizzato.</p>
               )}
               {diff?.patch && (
-                <pre className="diff-patch" tabIndex={0} aria-label="Righe aggiunte e rimosse">
+                <pre
+                  className={`diff-patch${reading.wrap ? ' diff-wrap' : ''}`}
+                  style={{ fontSize: `${(14 * reading.zoom) / 100}px` }}
+                  tabIndex={0}
+                  role="region"
+                  aria-label="Righe aggiunte e rimosse"
+                >
                   <code>
                     {diff.patch.split('\n').map((line, i) => (
                       <span

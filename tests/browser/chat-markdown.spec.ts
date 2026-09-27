@@ -174,11 +174,19 @@ test('streaming previews use the same table and code formatting as saved replies
   });
   await page.route(`**/api/conversations/${chat.id}`, async (route) => {
     const data = await (await route.fetch()).json();
-    data.runs = [{ id: 'stream-test', status: 'running' }];
+    data.runs = [
+      { id: 'stream-test', status: 'running', created_at: Date.now(), updated_at: Date.now() },
+    ];
+    data.activity = [
+      { id: 1, run_id: 'stream-test', text: 'Verifica dei file in corso', created_at: Date.now() },
+    ];
     await route.fulfill({ json: data });
   });
   try {
     await page.goto(`/?chat=${chat.id}`);
+    const work = page.getByRole('region', { name: 'Stato del lavoro' });
+    await expect(work).toHaveCount(1);
+    await expect(work).toContainText('Ultima attività: Verifica dei file in corso');
     await expect(page.getByText('Puoi cambiare chat. Il lavoro continua.')).toBeVisible();
     for (const text of ['| Funzione | Stato |\n| --- | --- |\n| Lettura | In', content]) {
       await page.evaluate(
@@ -191,7 +199,8 @@ test('streaming previews use the same table and code formatting as saved replies
         },
         { id: chat.id, text },
       );
-      await expect(page.locator('.preview table')).toHaveCount(1);
+      await expect(work.locator('.preview table')).toHaveCount(1);
+      await expect(work.getByText('Ultima attività:', { exact: false })).toHaveCount(0);
       expect(
         await page.locator('.messages').evaluate((el) => el.scrollWidth <= el.clientWidth),
       ).toBe(true);

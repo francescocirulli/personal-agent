@@ -11,7 +11,6 @@ import { SearchResults } from './SearchResults';
 import { ImageAttachments } from './ImageAttachments';
 import { ModelPicker } from './ModelPicker';
 import { AgentLogo } from './AgentLogo';
-import { ActivityPanel } from './ActivityPanel';
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ChatMarkdown } from './ChatMarkdown';
@@ -34,7 +33,6 @@ import {
   Pause,
   Plus,
   Search,
-  Square,
   Volume2,
   X,
   MoreHorizontal,
@@ -66,6 +64,7 @@ function App() {
   const [markdownDocument, setMarkdownDocument] = useState<MarkdownDocument>();
   const [activityOpen, setActivityOpen] = useState(false);
   const [diffOpen, setDiffOpen] = useState(false);
+  const [diffMode, setDiffMode] = useState<'local' | 'branch'>();
   const [workOnly, setWorkOnly] = useState(false);
 
   const [notificationsOpen, setNotificationsOpen] = useState(
@@ -1145,59 +1144,30 @@ function App() {
                   )}
                 </article>
               ))}
-              {working && (
-                <div className="run-progress">
-                  <div>
-                    <LoaderCircle size={16} className="spin" />
-                    <span>
-                      {sending
-                        ? 'Invio il messaggio…'
-                        : run?.status === 'transcribing'
-                          ? 'Sto ascoltando il tuo messaggio…'
-                          : current.activity.filter((a) => a.run_id === run?.id).at(-1)?.text ||
-                            'Il tuo agente sta lavorando…'}
-                    </span>
-                  </div>
-                  {preview && (
-                    <div className="preview">
-                      <ChatMarkdown text={preview} />
-                    </div>
-                  )}
-                  <p>Puoi cambiare chat. Il lavoro continua.</p>
-                  <button
-                    className="quiet"
-                    onClick={() =>
-                      api(`/conversations/${current.id}/cancel`, {}).catch((e) =>
-                        setError(e.message),
-                      )
-                    }
-                  >
-                    <Square size={12} /> Ferma task
-                  </button>
-                </div>
-              )}
               <WorkStatus
+                key={current.id}
                 chat={current}
                 connected={connected}
-                onChanges={() => {
+                sending={sending}
+                preview={preview}
+                activityOpen={activityOpen}
+                onActivityOpenChange={setActivityOpen}
+                onStop={() =>
+                  api(`/conversations/${current.id}/cancel`, {}).catch((e) => setError(e.message))
+                }
+                onChanges={(mode) => {
                   stopVoice();
+                  setDiffMode(mode);
                   setDiffOpen(true);
                 }}
               />
-              {!!current.activity.length && (
-                <ActivityPanel
-                  key={current.id}
-                  activity={current.activity}
-                  open={activityOpen}
-                  onOpenChange={setActivityOpen}
-                />
-              )}
               <div ref={bottom} />
             </div>
             <DiffPanel
               key={current.id}
               chat={current}
               open={diffOpen}
+              initialMode={diffMode}
               onClose={() => setDiffOpen(false)}
               running={working}
             />
@@ -1277,6 +1247,7 @@ function App() {
                     aria-label="Modifiche della chat"
                     onClick={() => {
                       stopVoice();
+                      setDiffMode(undefined);
                       setDiffOpen(true);
                     }}
                   >

@@ -32,6 +32,9 @@ for (const width of [320, 390]) {
     await writeFile(path.join(workspace, 'new.txt'), 'new content\n');
     try {
       await page.goto(`/?chat=${chat.id}`);
+      const card = page.getByRole('region', { name: 'Stato del lavoro' });
+      await expect(card.getByRole('button', { name: 'Apri modifiche (2)' })).toBeVisible();
+      await expect(card).toContainText('Modifiche locali');
       const trigger = page.getByRole('button', { name: 'Modifiche della chat', exact: true });
       await trigger.click();
       const sheet = page.getByRole('dialog', { name: 'Modifiche della chat' });
@@ -45,6 +48,38 @@ for (const width of [320, 390]) {
       expect((await sheet.boundingBox())!.width).toBeLessThanOrEqual(width);
       for (const button of await sheet.locator('button:visible').all())
         expect((await button.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+      const patch = sheet.getByRole('region', { name: 'Righe aggiunte e rimosse' });
+      const zoom = sheet.getByRole('button', { name: 'Ripristina zoom' });
+      const grow = sheet.getByRole('button', { name: 'Aumenta zoom' });
+      const shrink = sheet.getByRole('button', { name: 'Riduci zoom' });
+      const wrap = sheet.getByRole('button', { name: 'A capo', exact: true });
+      await expect(patch).toHaveCSS('font-size', '14px');
+      await grow.click();
+      await expect(zoom).toHaveText('120%');
+      await expect
+        .poll(() => patch.evaluate((el) => parseFloat(getComputedStyle(el).fontSize)))
+        .toBeCloseTo(16.8, 2);
+      for (let i = 0; i < 4; i++) await grow.click();
+      await expect(grow).toBeDisabled();
+      await expect(patch).toHaveCSS('font-size', '28px');
+      expect(await patch.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
+      await wrap.click();
+      await expect(wrap).toHaveAttribute('aria-pressed', 'true');
+      expect(await patch.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+      await sheet.locator('.branch-sheet-scroll').evaluate((el) => {
+        el.scrollTop = el.scrollHeight;
+      });
+      await expect(grow).toBeInViewport();
+      await expect(wrap).toBeInViewport();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+      await zoom.click();
+      await shrink.click();
+      await expect(shrink).toBeDisabled();
+      await expect(zoom).toHaveText('80%');
+      await zoom.click();
+      await grow.click();
       await page.screenshot({ path: `test-results/diff-${width}.png` });
       await sheet.getByRole('button', { name: 'Tutti i file modificati' }).click();
       await sheet.getByRole('button', { name: 'new.txt Aggiunto · nuovo file' }).click();
@@ -65,6 +100,24 @@ for (const width of [320, 390]) {
       await expect(sheet.locator('.diff-add').first()).toContainText('after');
       await page.keyboard.press('Escape');
       await expect(sheet).toHaveCount(0);
+      await page.evaluate(() => window.dispatchEvent(new Event('git-change')));
+      await expect(card).toContainText('Confronto con main');
+      await card.getByRole('button', { name: 'Apri modifiche (2)' }).click();
+      await expect(
+        sheet.getByRole('button', { name: 'Confronto branch', exact: true }),
+      ).toHaveAttribute('aria-pressed', 'true');
+      await sheet.getByRole('button', { name: 'example.ts Aggiunto' }).click();
+      await expect(zoom).toHaveText('120%');
+      await expect(wrap).toHaveAttribute('aria-pressed', 'true');
+      await page.reload();
+      await card.getByRole('button', { name: 'Apri modifiche (2)' }).click();
+      await sheet.getByRole('button', { name: 'example.ts Aggiunto' }).click();
+      await expect(zoom).toHaveText('120%');
+      await expect(wrap).toHaveAttribute('aria-pressed', 'true');
+      await page.keyboard.press('Escape');
+      await git('reset', '--hard', 'main');
+      await page.evaluate(() => window.dispatchEvent(new Event('git-change')));
+      await expect(card.getByRole('button', { name: /Apri modifiche/ })).toHaveCount(0);
       expect((await (await request.get(base)).json()).runs).toHaveLength(0);
       expect((await git('status', '--porcelain')).stdout).toBe('');
     } finally {
@@ -93,8 +146,16 @@ test('work states survive reload, distinguish failures and expose an overview of
     await expect(status.getByText('Coda in pausa', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Riprendi coda', exact: true }).click();
     await expect(status.getByText('In corso', { exact: true })).toBeVisible();
+    await expect(page.locator('.run-progress')).toHaveCount(0);
+    await expect(status.getByRole('button', { name: 'Ferma task' })).toBeVisible();
+    await expect(status.getByRole('button', { name: /Apri modifiche/ })).toHaveCount(0);
     await expect(status.getByText('Completato', { exact: true })).toBeVisible();
     await expect(status).toContainText('Le verifiche effettuate sono descritte nella risposta.');
+    await expect(status.getByRole('button', { name: 'Ferma task' })).toHaveCount(0);
+    await expect(status.locator('.preview')).toHaveCount(0);
+    await expect(
+      status.getByRole('button', { name: 'Attività del lavoro', exact: true }),
+    ).toHaveAttribute('aria-expanded', 'false');
     await page.reload();
     await expect(status.getByText('Completato', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Attività del lavoro', exact: true }).click();
@@ -148,7 +209,9 @@ test('changing chat discards an outstanding diff response', async ({ page, reque
   const chats = [];
   for (const title of ['Diff prima chat', 'Diff seconda chat']) {
     const chat = await (
-      await request.post('/api/conversations', { data: { agent: 'codex', title } })
+      await request.post('/api/conversations', {
+        data: { agent: 'codex', title, repo: 'example/review-project' },
+      })
     ).json();
     chats.push(chat);
   }
@@ -173,8 +236,77 @@ test('changing chat discards an outstanding diff response', async ({ page, reque
       'Il repository non è ancora disponibile.',
     );
     await expect(page.getByText('old-secret.txt')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /Apri modifiche/ })).toHaveCount(0);
   } finally {
     for (const chat of chats)
       await request.post(`/api/conversations/${chat.id}/delete`, { data: {} });
+  }
+});
+
+test('work card uses the full Git count and hides unavailable or empty comparisons', async ({
+  page,
+  request,
+}) => {
+  const chat = await (
+    await request.post('/api/conversations', {
+      data: { agent: 'codex', title: 'Conteggio modifiche', repo: 'example/count' },
+    })
+  ).json();
+  let state: 'files' | 'error' | 'empty' = 'files';
+  let reads = 0;
+  await page.route(`**/api/conversations/${chat.id}/diff?**`, async (route) => {
+    reads++;
+    if (state === 'error')
+      return route.fulfill({ status: 409, json: { error: 'Operazione Git in corso.' } });
+    await route.fulfill({
+      json: {
+        git: { ready: true },
+        mode: 'local',
+        base: null,
+        files: [{ path: 'first.txt', status: 'M' }],
+        total: state === 'files' ? 501 : 0,
+        limited: state === 'files',
+      },
+    });
+  });
+  try {
+    await page.goto(`/?chat=${chat.id}`);
+    const action = page.getByRole('button', { name: /Apri modifiche/ });
+    await expect(action).toHaveText('Apri modifiche (501)');
+    state = 'error';
+    await page.evaluate(() => window.dispatchEvent(new Event('git-change')));
+    await expect(action).toHaveCount(0);
+    await expect(
+      page.getByRole('button', { name: 'Modifiche della chat', exact: true }),
+    ).toBeVisible();
+    const previous = reads;
+    state = 'empty';
+    await page.evaluate(() => window.dispatchEvent(new Event('git-change')));
+    await expect.poll(() => reads).toBeGreaterThanOrEqual(previous + 2);
+    await expect(action).toHaveCount(0);
+    state = 'files';
+    await page.evaluate(() => window.dispatchEvent(new Event('git-change')));
+    await expect(action).toHaveText('Apri modifiche (501)');
+  } finally {
+    await request.post(`/api/conversations/${chat.id}/delete`, { data: {} });
+  }
+});
+
+test('stop remains available inside the unified work card', async ({ page, request }) => {
+  const chat = await (
+    await request.post('/api/conversations', { data: { agent: 'codex', title: 'Ferma lavoro' } })
+  ).json();
+  try {
+    await page.goto(`/?chat=${chat.id}`);
+    await page.getByRole('textbox', { name: 'Messaggio', exact: true }).fill('Lavoro da fermare');
+    await page.getByRole('button', { name: 'Invia messaggio', exact: true }).click();
+    const card = page.getByRole('region', { name: 'Stato del lavoro' });
+    await expect(card.getByText('In corso', { exact: true })).toBeVisible();
+    await card.getByRole('button', { name: 'Ferma task' }).click();
+    await expect(card.getByText('Fermato', { exact: true })).toBeVisible();
+    await expect(card.getByRole('button', { name: 'Ferma task' })).toHaveCount(0);
+    await expect(card.locator('.preview')).toHaveCount(0);
+  } finally {
+    await request.post(`/api/conversations/${chat.id}/delete`, { data: {} });
   }
 });
