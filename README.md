@@ -249,6 +249,6 @@ Everyone is welcome to fork the repository and **open a pull request targeting `
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) for setup, checks, and the PR workflow. Third-party agent logos retain their owners' rights; see [brand attribution](public/brands/README.md).
 
-## License status
+## License
 
-A project license has not been selected yet. The maintainer will publish the license separately. Third-party dependencies and brand assets retain their own licenses and notices.
+This project is licensed under the [MIT License](LICENSE). Third-party dependencies and brand assets retain their own licenses and notices.
