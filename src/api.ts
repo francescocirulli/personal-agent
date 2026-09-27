@@ -1,5 +1,5 @@
 import type { Conversation, Message, Run, Activity, RunStatus } from '../server/store';
-export type Chat = Conversation & { status?: RunStatus | null };
+export type Chat = Conversation & { status?: RunStatus | null; unread_count?: number };
 export type Detail = Chat & {
   messages: Message[];
   runs: Run[];

@@ -16,7 +16,7 @@ import { EventEmitter } from 'node:events';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
 import { mkdir, rm, readFile, appendFile } from 'node:fs/promises';
-import webpush from 'web-push';
+import { createNotifications, NotificationError, type Presence } from './notifications';
 import { z } from 'zod';
 import type { Config } from './config';
 import { Store, type Conversation, type Message } from './store';
@@ -66,17 +66,12 @@ export function createApp(config: Config) {
   const gitOperations = new Map<string, { controller: AbortController; promise: Promise<void> }>();
   let closing = false;
   const streams = new Set<Response>();
-  const presence = new Map<
-    string,
-    { conversationId: string | null; visible: boolean; at: number }
-  >();
+  const presence = new Map<string, Presence>();
   const upload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: 20 * 1024 * 1024, files: 4, fields: 3, fieldSize: 160000 },
   });
-  const pushEnabled = !!(config.vapidPrivate && config.vapidPublic);
-  if (pushEnabled)
-    webpush.setVapidDetails(config.vapidSubject, config.vapidPublic, config.vapidPrivate);
+  const notifications = createNotifications(store, config, presence);
   function publish(data: Record<string, unknown>) {
     const result = store.db
       .prepare('INSERT INTO events(data) VALUES (?)')
@@ -98,39 +93,6 @@ export function createApp(config: Config) {
     if (!c) throw new HttpError(404, 'Chat non trovata.');
     return c;
   }
-  async function notify(chat: Conversation, failed: boolean) {
-    if (!pushEnabled) return;
-    const current = store.conversation(chat.id);
-    if (!current) return;
-    if (
-      [...presence.values()].some(
-        (p) => p.visible && p.conversationId === chat.id && Date.now() - p.at < 45000,
-      )
-    )
-      return;
-    const payload = JSON.stringify({
-      title: failed ? 'Il task richiede attenzione' : 'La risposta è pronta',
-      body: current.title,
-      url: `/?chat=${chat.id}`,
-      tag: chat.id,
-    });
-    await Promise.allSettled(
-      store.db
-        .prepare('SELECT endpoint,data FROM subscriptions')
-        .all()
-        .map(async (row) => {
-          try {
-            await webpush.sendNotification(JSON.parse(String(row.data)), payload, {
-              TTL: 3600,
-              timeout: 10000,
-            });
-          } catch (e: any) {
-            if ([404, 410].includes(e.statusCode))
-              store.db.prepare('DELETE FROM subscriptions WHERE endpoint=?').run(row.endpoint);
-          }
-        }),
-    );
-  }
   async function execute(
     chat: Conversation,
     runId: string,
@@ -140,7 +102,8 @@ export function createApp(config: Config) {
     images: ChatFile[] = [],
     savedMessage = false,
   ) {
-    let failed = false;
+    let outcome: 'complete' | 'error' | 'cancelled' = 'complete';
+    let responseId: string | undefined;
     let documentDir: string | undefined;
     let mcpAccess: ReturnType<McpService['access']> | undefined;
     let browserAccess: ReturnType<BrowserService['access']> | undefined;
@@ -280,10 +243,11 @@ export function createApp(config: Config) {
         result.voice,
         exported.files,
       );
+      responseId = message.id;
       store.setRun(runId, 'complete');
       publish({ type: 'done', conversationId: chat.id, runId, messageId: message.id });
     } catch (e) {
-      failed = !controller.signal.aborted;
+      outcome = controller.signal.aborted ? 'cancelled' : 'error';
       const message = controller.signal.aborted
         ? 'Task interrotto su richiesta.'
         : e instanceof Error
@@ -291,7 +255,13 @@ export function createApp(config: Config) {
           : 'Errore durante il task.';
       store.setRun(runId, controller.signal.aborted ? 'cancelled' : 'error', message);
       store.touch(chat.id);
-      publish({ type: 'run_error', conversationId: chat.id, runId, error: message });
+      publish({
+        type: 'run_error',
+        conversationId: chat.id,
+        runId,
+        error: message,
+        cancelled: controller.signal.aborted,
+      });
     } finally {
       if (documentDir) await rm(documentDir, { recursive: true, force: true }).catch(() => {});
       mcpAccess?.release();
@@ -303,7 +273,7 @@ export function createApp(config: Config) {
         drainQueue();
       }
     }
-    await notify(chat, failed);
+    await notifications.notify(chat, outcome, responseId);
   }
 
   function startRun(
@@ -484,7 +454,7 @@ export function createApp(config: Config) {
     res.json({
       demo: config.demo,
       voiceAvailable: !!config.audioKey,
-      pushPublicKey: config.vapidPublic || null,
+      pushPublicKey: config.vapidPrivate && config.vapidPublic ? config.vapidPublic : null,
       maxRuns: config.maxRuns,
       unrestricted: config.unrestricted,
     }),
@@ -616,6 +586,7 @@ export function createApp(config: Config) {
     const p = z
       .object({
         clientId: z.string().uuid(),
+        deviceId: z.string().uuid().optional(),
         conversationId: z.string().uuid().nullable(),
         visible: z.boolean(),
       })
@@ -865,6 +836,13 @@ export function createApp(config: Config) {
     const chat = store.create(input.agent, input.repo || null, input.title);
     publish({ type: 'changed', conversationId: chat.id });
     res.status(201).json(chat);
+  });
+  app.post('/api/conversations/:id/read', (req, res) => {
+    const chat = getChat(req.params.id);
+    const { messageId } = z.object({ messageId: z.string().uuid() }).parse(req.body);
+    const changed = store.markRead(chat.id, messageId);
+    if (changed) publish({ type: 'read', conversationId: chat.id });
+    res.json({ unreadCount: store.unreadCount() });
   });
   app.get('/api/conversations/:id', (req, res) => {
     const chat = getChat(req.params.id);
@@ -1127,28 +1105,7 @@ export function createApp(config: Config) {
       if (err) next(new HttpError(404, 'Audio non disponibile. Premi Ascolta per rigenerarlo.'));
     });
   });
-  app.post('/api/push/subscribe', (req, res) => {
-    if (!pushEnabled) throw new HttpError(503, 'Notifiche non configurate sul server.');
-    const sub = z
-      .object({
-        endpoint: z.string().url().max(3000),
-        keys: z.object({ p256dh: z.string().min(20).max(300), auth: z.string().min(10).max(200) }),
-      })
-      .parse(req.body);
-    const endpoint = new URL(sub.endpoint);
-    if (
-      endpoint.protocol !== 'https:' ||
-      endpoint.port ||
-      !['web.push.apple.com', 'fcm.googleapis.com', 'updates.push.services.mozilla.com'].some(
-        (host) => endpoint.hostname === host || endpoint.hostname.endsWith(`.${host}`),
-      )
-    )
-      throw new HttpError(400, 'Servizio notifiche non supportato.');
-    store.db
-      .prepare('INSERT OR REPLACE INTO subscriptions VALUES (?,?)')
-      .run(sub.endpoint, JSON.stringify(sub));
-    res.json({ ok: true });
-  });
+  app.use('/api/push', notifications.router);
   app.use('/api', (_req, res) => res.status(404).json({ error: 'Endpoint non trovato.' }));
   const dist = path.resolve('dist');
   if (existsSync(dist)) {
@@ -1173,7 +1130,8 @@ export function createApp(config: Config) {
           err instanceof McpError ||
           err instanceof BrowserError ||
           err instanceof SkillError ||
-          err instanceof TerminalError
+          err instanceof TerminalError ||
+          err instanceof NotificationError
           ? err.status
           : 500,
       )
@@ -1186,7 +1144,8 @@ export function createApp(config: Config) {
           err instanceof McpError ||
           err instanceof BrowserError ||
           err instanceof SkillError ||
-          err instanceof TerminalError
+          err instanceof TerminalError ||
+          err instanceof NotificationError
             ? err.message
             : err instanceof Error && /Voce non configurata|Sintesi vocale/.test(err.message)
               ? err.message

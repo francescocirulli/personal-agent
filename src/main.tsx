@@ -1,3 +1,5 @@
+import { NotificationSettings } from './NotificationSettings';
+import { notificationDeviceId, updateAppBadge } from './notifications';
 import { BranchPicker } from './BranchPicker';
 import { useDraft, deleteDraft } from './useDraft';
 import { FileCards } from './FileCards';
@@ -57,6 +59,9 @@ import { BrowserPanel } from './BrowserPanel';
 
 const agentName = (agent?: string) => (agent === 'codex' ? 'Codex' : 'Claude Code');
 function App() {
+  const [notificationsOpen, setNotificationsOpen] = useState(
+    new URLSearchParams(location.search).get('settings') === 'notifications',
+  );
   const [authenticated, setAuthenticated] = useState<boolean | null>(null),
     [password, setPassword] = useState('');
   const [settings, setSettings] = useState<Settings>(),
@@ -291,6 +296,23 @@ function App() {
       .catch((e) => setError(e.message));
   }, []);
   useEffect(() => {
+    if (!authenticated || !('serviceWorker' in navigator) || !('PushManager' in window)) return;
+    let disposed = false;
+    void navigator.serviceWorker.ready
+      .then(async (registration) => {
+        const subscription = await registration.pushManager.getSubscription();
+        if (!disposed && subscription)
+          await api('/push/device', {
+            endpoint: subscription.endpoint,
+            deviceId: notificationDeviceId(),
+          });
+      })
+      .catch(() => {});
+    return () => {
+      disposed = true;
+    };
+  }, [authenticated]);
+  useEffect(() => {
     if (!authenticated) return;
     api<Settings>('/config')
       .then(setSettings)
@@ -331,8 +353,12 @@ function App() {
       void refresh().catch((err) => setError(err.message));
       if (e.type === 'done' || e.type === 'run_error') {
         if (e.conversationId === selection.current) setPreview('');
-        if (e.conversationId !== selection.current)
-          setNotice('Una chat ha terminato il lavoro. La risposta è nello storico.');
+        if (e.conversationId !== selection.current && !e.cancelled && !e.replayed)
+          setNotice(
+            e.type === 'done'
+              ? 'Una chat ha una nuova risposta. La trovi nello storico.'
+              : 'Un lavoro non è stato completato. Apri la chat per i dettagli.',
+          );
       }
       if (
         e.replayed ||
@@ -364,8 +390,16 @@ function App() {
         '/presence',
         {
           clientId: clientId.current,
+          deviceId: notificationDeviceId(),
           conversationId: selected,
-          visible: !document.hidden,
+          visible:
+            !document.hidden &&
+            document.hasFocus() &&
+            !notificationsOpen &&
+            !preferencesOpen &&
+            !sidebar &&
+            !create &&
+            !chatMenu,
         },
         true,
       ).catch(() => {});
@@ -373,11 +407,58 @@ function App() {
     report();
     const timer = setInterval(report, 15000);
     document.addEventListener('visibilitychange', report);
+    window.addEventListener('focus', report);
+    window.addEventListener('blur', report);
     return () => {
       clearInterval(timer);
       document.removeEventListener('visibilitychange', report);
+      window.removeEventListener('focus', report);
+      window.removeEventListener('blur', report);
     };
-  }, [selected, authenticated]);
+  }, [selected, authenticated, notificationsOpen, preferencesOpen, sidebar, create, chatMenu]);
+  const lastResponseId = current?.messages
+    .filter((message) => message.role === 'assistant')
+    .at(-1)?.id;
+  useEffect(() => {
+    const markRead = () => {
+      if (
+        !current ||
+        !lastResponseId ||
+        document.hidden ||
+        !document.hasFocus() ||
+        notificationsOpen ||
+        preferencesOpen ||
+        sidebar ||
+        create ||
+        chatMenu
+      )
+        return;
+      void api<{ unreadCount: number }>(`/conversations/${current.id}/read`, {
+        messageId: lastResponseId,
+      })
+        .then(({ unreadCount }) => updateAppBadge(unreadCount))
+        .catch(() => {});
+    };
+    markRead();
+    window.addEventListener('focus', markRead);
+    document.addEventListener('visibilitychange', markRead);
+    return () => {
+      window.removeEventListener('focus', markRead);
+      document.removeEventListener('visibilitychange', markRead);
+    };
+  }, [
+    current?.id,
+    lastResponseId,
+    notificationsOpen,
+    preferencesOpen,
+    sidebar,
+    connected,
+    create,
+    chatMenu,
+  ]);
+  useEffect(() => {
+    updateAppBadge(chats.reduce((sum, chat) => sum + (chat.unread_count || 0), 0));
+  }, [chats]);
   useEffect(() => {
     if (!jumpPending.current) bottom.current?.scrollIntoView({ behavior: 'smooth' });
   }, [current?.messages.length, preview]);
@@ -570,30 +651,11 @@ function App() {
       setSpeaking(false);
     }
   }
-  async function enablePush() {
-    try {
-      if (!settings?.pushPublicKey) {
-        setNotice('Le notifiche richiedono la configurazione VAPID sul server.');
-        return;
-      }
-      if (!('serviceWorker' in navigator) || !('PushManager' in window))
-        throw new Error('Su iPhone, aggiungi prima questa app alla schermata Home.');
-      const permission = await Notification.requestPermission();
-      if (permission !== 'granted') throw new Error('Permesso notifiche non concesso.');
-      const registration = await navigator.serviceWorker.ready;
-      const key = settings.pushPublicKey.replace(/-/g, '+').replace(/_/g, '/');
-      const bytes = Uint8Array.from(atob(key), (char) => char.charCodeAt(0));
-      const subscription =
-        (await registration.pushManager.getSubscription()) ||
-        (await registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: bytes,
-        }));
-      await api('/push/subscribe', subscription.toJSON());
-      setNotice('Notifiche attive. Ti avviso quando il lavoro è pronto.');
-    } catch (e) {
-      setError((e as Error).message);
-    }
+  function openNotifications() {
+    stopVoice();
+    setSidebar(false);
+    setPreferencesOpen(false);
+    setNotificationsOpen(true);
   }
   const activeCount = chats.filter((c) => busy(c.status)).length;
   const chatGroups = new Map<string, Chat[]>();
@@ -734,6 +796,17 @@ function App() {
                         <strong>{c.title}</strong>
                         <small>{agentName(c.agent)}</small>
                       </span>
+                      {!!c.unread_count && (
+                        <span
+                          className="unread-dot"
+                          role="img"
+                          aria-label={
+                            c.unread_count === 1
+                              ? 'Una risposta non letta'
+                              : `${c.unread_count} risposte non lette`
+                          }
+                        />
+                      )}
                       {busy(c.status) && (
                         <span className="status-dot pulse" aria-label="In corso" />
                       )}
@@ -770,7 +843,7 @@ function App() {
                 : 'Connesso'
               : 'Riconnessione in corso…'}
           </div>
-          <button className="quiet" onClick={enablePush}>
+          <button className="quiet" onClick={openNotifications}>
             <Bell size={16} /> Notifiche
           </button>
           <button className="quiet" onClick={() => void openPreferences()}>
@@ -1168,6 +1241,9 @@ function App() {
           </>
         )}
       </main>
+      {notificationsOpen && (
+        <NotificationSettings settings={settings} onClose={() => setNotificationsOpen(false)} />
+      )}
       {chatMenu && (
         <div className="modal-backdrop">
           <section
@@ -1312,6 +1388,9 @@ function App() {
               <button onClick={() => void openPreferences('skills')}>Skill</button>
               <button onClick={() => void openPreferences('terminal')}>Terminale</button>
             </nav>
+            <button className="soft-button" onClick={openNotifications}>
+              <Bell size={16} /> Notifiche
+            </button>
             <p>
               OpenRouter trascrive quello che dici e legge le risposte. Queste scelte valgono per
               tutte le chat.

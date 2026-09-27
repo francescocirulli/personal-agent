@@ -113,6 +113,27 @@ export class Store {
         .replace(/[\u0300-\u036f]/g, '')
         .toLowerCase(),
     );
+    if (
+      !this.db
+        .prepare('PRAGMA table_info(conversations)')
+        .all()
+        .some((c) => c.name === 'read_message_seq')
+    ) {
+      this.db.exec('BEGIN IMMEDIATE');
+      try {
+        this.db.exec(
+          'ALTER TABLE conversations ADD COLUMN read_message_seq INTEGER NOT NULL DEFAULT 0',
+        );
+        // Existing history is already read when upgrading.
+        this.db.exec(
+          'UPDATE conversations SET read_message_seq=(SELECT coalesce(max(rowid),0) FROM messages WHERE conversation_id=conversations.id)',
+        );
+        this.db.exec('COMMIT');
+      } catch (error) {
+        this.db.exec('ROLLBACK');
+        throw error;
+      }
+    }
     this.db
       .prepare(
         "UPDATE runs SET status='interrupted',error='Il server è stato riavviato. Il lavoro non viene rieseguito automaticamente.',updated_at=? WHERE status IN ('running','transcribing')",
@@ -122,9 +143,23 @@ export class Store {
   list() {
     return this.db
       .prepare(
-        `SELECT c.*, (SELECT status FROM runs WHERE conversation_id=c.id ORDER BY CASE WHEN status IN ('running','transcribing') THEN 0 WHEN status='queued' THEN 1 ELSE 2 END,created_at DESC,rowid DESC LIMIT 1) AS status FROM conversations c ORDER BY updated_at DESC`,
+        `SELECT c.*, (SELECT count(*) FROM messages m WHERE m.conversation_id=c.id AND m.role='assistant' AND m.rowid>c.read_message_seq) AS unread_count, (SELECT status FROM runs WHERE conversation_id=c.id ORDER BY CASE WHEN status IN ('running','transcribing') THEN 0 WHEN status='queued' THEN 1 ELSE 2 END,created_at DESC,rowid DESC LIMIT 1) AS status FROM conversations c ORDER BY updated_at DESC`,
       )
-      .all() as unknown as (Conversation & { status: RunStatus | null })[];
+      .all() as unknown as (Conversation & { status: RunStatus | null; unread_count: number })[];
+  }
+  unreadCount() {
+    return this.list().reduce((sum, chat) => sum + chat.unread_count, 0);
+  }
+  markRead(id: string, messageId: string) {
+    const message = this.db
+      .prepare(
+        "SELECT rowid AS seq FROM messages WHERE id=? AND conversation_id=? AND role='assistant'",
+      )
+      .get(messageId, id);
+    if (!message) return false;
+    return !!this.db
+      .prepare('UPDATE conversations SET read_message_seq=? WHERE id=? AND read_message_seq<?')
+      .run(message.seq, id, message.seq).changes;
   }
   conversation(id: string) {
     return this.db.prepare('SELECT * FROM conversations WHERE id=?').get(id) as unknown as
@@ -246,6 +281,11 @@ export class Store {
         );
         this.db.prepare('UPDATE messages SET created_at=? WHERE id=?').run(message.created_at, id);
       }
+      this.db
+        .prepare(
+          'UPDATE conversations SET read_message_seq=(SELECT coalesce(max(rowid),0) FROM messages WHERE conversation_id=conversations.id) WHERE id=?',
+        )
+        .run(chat.id);
       this.db.exec('COMMIT');
       return this.conversation(chat.id)!;
     } catch (e) {

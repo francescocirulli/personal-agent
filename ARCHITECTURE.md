@@ -257,7 +257,12 @@ Bozza di API del bridge (indicativa):
 | `GET` | `/conversations/{id}/messages/{message_id}/audio` | URL media stabile: genera o riusa il TTS e serve audio con supporto Range per Safari |
 | `GET` | `/github` | Account personale, organizzazioni e catalogo paginato dei repository accessibili tramite gh |
 | `GET` | `/audio/{id}` | Audio TTS generato, con supporto Range |
-| `POST` | `/push/subscribe` | Registra la subscription Web Push |
+| `POST` | `/push/subscribe` | Registra la subscription Web Push e il dispositivo, preservando le preferenze |
+| `POST` | `/push/device` | Stato e preferenze della subscription del dispositivo corrente |
+| `POST` | `/push/preferences` | Anteprima facoltativa e soppressione se la chat è aperta su altri dispositivi |
+| `POST` | `/push/test` | Invia una prova solo alla subscription registrata indicata |
+| `POST` | `/push/unsubscribe` | Disattiva gli invii alla subscription indicata |
+| `POST` | `/conversations/{id}/read` | Segna lette le risposte fino al messaggio effettivamente caricato; pubblica SSE solo quando cambia lo stato |
 
 ## 7. Deploy (Docker)
 

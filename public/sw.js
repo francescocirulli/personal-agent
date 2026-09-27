@@ -1,4 +1,4 @@
-const CACHE = 'personal-agent-shell-v13';
+const CACHE = 'personal-agent-shell-v14';
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE).then((cache) => cache.addAll(['/', '/icon-192.png', '/icon-512.png'])),
@@ -44,19 +44,31 @@ self.addEventListener('fetch', (event) => {
     );
   }
 });
+async function updateBadge(count) {
+  if (!Number.isInteger(count) || count < 0) return;
+  try {
+    if (count) await self.navigator.setAppBadge?.(count);
+    else await self.navigator.clearAppBadge?.();
+  } catch {
+    /* Badges may be disabled by the operating system. */
+  }
+}
 self.addEventListener('push', (event) => {
   let data = {};
   try {
     data = event.data?.json() || {};
   } catch {}
   event.waitUntil(
-    self.registration.showNotification(data.title || 'Personal Agent', {
-      body: data.body || 'La risposta è pronta.',
-      icon: '/icon-192.png',
-      badge: '/icon-192.png',
-      tag: data.tag || 'agent',
-      data: { url: data.url || '/' },
-    }),
+    Promise.all([
+      self.registration.showNotification(data.title || 'Personal Agent', {
+        body: data.body || 'La risposta è pronta.',
+        icon: '/icon-192.png',
+        badge: '/icon-192.png',
+        tag: data.tag || 'agent',
+        data: { url: data.url || '/' },
+      }),
+      updateBadge(data.unreadCount),
+    ]),
   );
 });
 self.addEventListener('notificationclick', (event) => {
@@ -65,7 +77,10 @@ self.addEventListener('notificationclick', (event) => {
   if (url.origin !== self.location.origin) return;
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (clients) => {
-      const client = clients[0];
+      const client =
+        clients.find(
+          (c) => new URL(c.url).searchParams.get('chat') === url.searchParams.get('chat'),
+        ) || clients[0];
       if (client) {
         await client.navigate(url.href);
         return client.focus();

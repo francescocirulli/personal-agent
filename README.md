@@ -105,6 +105,16 @@ Verifica eseguita il 26 settembre 2026: build riuscita, 10 test backend e 12 tes
 
 Per ripetere solo la prova di ingresso audio: `SMOKE_AGENTS='' SMOKE_AUDIO_INPUT=true node --import tsx scripts/smoke-live.ts`. Questa prova usa la subscription e brevi chiamate audio a pagamento.
 
+## Notifiche e risposte non lette
+
+Il pulsante **Notifiche** nello storico (anche nelle impostazioni voce) apre lo stato del dispositivo: attive, disattivate, bloccate o non disponibili. Da qui puoi attivare/disattivare gli avvisi e usare **Invia una prova**. Il permesso viene chiesto solo dopo il tocco su Attiva. Su iPhone apri la PWA dalla schermata Home; il pannello spiega come aggiungerla se necessario. Servono le chiavi VAPID sul server e HTTPS in produzione.
+
+Ogni notifica mostra il titolo della chat e l’agente che ha risposto, oppure segnala un errore. Il tocco apre la risposta interessata, senza avviare audio. Le interruzioni richieste dall’utente non generano notifiche. L’anteprima del testo è disattivata per impostazione iniziale e si abilita separatamente su ciascun dispositivo; il titolo della chat resta visibile.
+
+Le preferenze sono salvate con la registrazione push del dispositivo. Per impostazione iniziale, una chat visibile sul computer non blocca gli avvisi sul telefono. Puoi attivare **Non avvisarmi se leggo la chat su un altro dispositivo**; sul dispositivo che sta mostrando la chat in primo piano gli avvisi sono sempre evitati. Le registrazioni push scadute vengono rimosse e il pannello consente di attivarle di nuovo. La conferma di invio della prova indica l’accettazione da parte del servizio push, non certifica la visualizzazione da parte del sistema operativo.
+
+Un pallino nello storico identifica le chat con risposte non lette. La lettura si sincronizza tra finestre e dispositivi, è persistente e riguarda solo i messaggi già caricati nella chat visibile. Le conversazioni precedenti all’aggiornamento e la cronologia copiata in una diramazione non vengono considerate nuove. Il contatore sull’icona si aggiorna all’arrivo di una push e durante l’uso dell’app, quando il browser e le impostazioni del sistema supportano i badge; su un dispositivo sospeso si riallinea al prossimo aggiornamento o alla riapertura.
+
 ## Limiti della prima versione
 
 - Il rilevamento delle pause usa un VAD energetico adattivo: va tarato sul microfono dell'iPhone e in ambienti rumorosi. Non è ancora Silero. Durante lavoro e riproduzione il microfono non invia turni; niente interruzione parlata.
