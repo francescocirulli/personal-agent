@@ -1,6 +1,15 @@
+import { isMarkdown, type MarkdownDocument } from './markdown';
 import { useState } from 'react';
 import type { Attachment } from '../server/store';
-export function FileCards({ chatId, files }: { chatId: string; files: Attachment[] }) {
+export function FileCards({
+  chatId,
+  files,
+  onRead,
+}: {
+  chatId: string;
+  files: Attachment[];
+  onRead(document: MarkdownDocument): void;
+}) {
   const [error, setError] = useState('');
   const [sharing, setSharing] = useState<string | null>(null);
   const [prepared, setPrepared] = useState<{ id: string; file: File } | null>(null);
@@ -36,9 +45,25 @@ export function FileCards({ chatId, files }: { chatId: string; files: Attachment
           <div className="file-card" key={file.id}>
             <strong>{file.name}</strong>
             <div>
-              <a href={url + '?open=1'} target="_blank" rel="noreferrer">
-                Apri
-              </a>
+              {isMarkdown(file.name, file.mime) ? (
+                <button
+                  onClick={() =>
+                    onRead({
+                      key: `attachment:${chatId}:${file.id}`,
+                      name: file.name,
+                      url,
+                      chatId,
+                      attachmentId: file.id,
+                    })
+                  }
+                >
+                  Apri
+                </button>
+              ) : (
+                <a href={url + '?open=1'} target="_blank" rel="noreferrer">
+                  Apri
+                </a>
+              )}
               <a href={url} download={file.name}>
                 Scarica
               </a>

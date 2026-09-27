@@ -1,3 +1,4 @@
+import type { MarkdownDocument } from './markdown';
 import { NotificationSettings } from './NotificationSettings';
 import { notificationDeviceId, updateAppBadge } from './notifications';
 import { BranchPicker } from './BranchPicker';
@@ -58,7 +59,9 @@ const TerminalSettings = React.lazy(() => import('./TerminalSettings'));
 import { BrowserPanel } from './BrowserPanel';
 
 const agentName = (agent?: string) => (agent === 'codex' ? 'Codex' : 'Claude Code');
+const MarkdownReader = React.lazy(() => import('./MarkdownReader'));
 function App() {
+  const [markdownDocument, setMarkdownDocument] = useState<MarkdownDocument>();
   const [notificationsOpen, setNotificationsOpen] = useState(
     new URLSearchParams(location.search).get('settings') === 'notifications',
   );
@@ -398,6 +401,7 @@ function App() {
             !notificationsOpen &&
             !preferencesOpen &&
             !sidebar &&
+            !markdownDocument &&
             !create &&
             !chatMenu,
         },
@@ -415,7 +419,16 @@ function App() {
       window.removeEventListener('focus', report);
       window.removeEventListener('blur', report);
     };
-  }, [selected, authenticated, notificationsOpen, preferencesOpen, sidebar, create, chatMenu]);
+  }, [
+    selected,
+    authenticated,
+    notificationsOpen,
+    preferencesOpen,
+    sidebar,
+    create,
+    chatMenu,
+    markdownDocument,
+  ]);
   const lastResponseId = current?.messages
     .filter((message) => message.role === 'assistant')
     .at(-1)?.id;
@@ -429,6 +442,7 @@ function App() {
         notificationsOpen ||
         preferencesOpen ||
         sidebar ||
+        markdownDocument ||
         create ||
         chatMenu
       )
@@ -449,6 +463,7 @@ function App() {
   }, [
     current?.id,
     lastResponseId,
+    markdownDocument,
     notificationsOpen,
     preferencesOpen,
     sidebar,
@@ -460,7 +475,8 @@ function App() {
     updateAppBadge(chats.reduce((sum, chat) => sum + (chat.unread_count || 0), 0));
   }, [chats]);
   useEffect(() => {
-    if (!jumpPending.current) bottom.current?.scrollIntoView({ behavior: 'smooth' });
+    if (!jumpPending.current && !markdownDocument)
+      bottom.current?.scrollIntoView({ behavior: 'smooth' });
   }, [current?.messages.length, preview]);
   useEffect(() => {
     if (
@@ -509,6 +525,41 @@ function App() {
     } finally {
       setCreating(false);
     }
+  }
+  function openMarkdown(document: MarkdownDocument) {
+    stopVoice();
+    setMarkdownDocument(document);
+  }
+  async function askAboutMarkdown(content: string) {
+    const doc = markdownDocument;
+    if (!doc || !current || !draftReady || sendPending.current)
+      throw new Error('Attendi che la chat sia pronta e riprova.');
+    if (doc.chatId && doc.chatId !== current.id)
+      throw new Error('Riapri il documento dalla sua chat.');
+    if (!doc.attachmentId) {
+      if (images.length >= 4)
+        throw new Error(
+          'La bozza contiene già 4 allegati. Rimuovine uno prima di aggiungere questo file.',
+        );
+      setImages((previous) => [
+        ...previous,
+        new File([content], doc.name, { type: 'text/markdown' }),
+      ]);
+    }
+    const reference = doc.attachmentId
+      ? `Riferimento: file "${doc.name}" (allegato ${doc.attachmentId}).`
+      : `Riferimento: file allegato "${doc.name}".`;
+    setDraft(draft ? `${draft}\n\n${reference}\n` : `${reference}\n\n`);
+    setPreferencesOpen(false);
+    setMarkdownDocument(undefined);
+    const url = new URL(location.href);
+    url.searchParams.delete('settings');
+    history.replaceState({}, '', url.pathname + url.search);
+    requestAnimationFrame(() =>
+      window.document
+        .querySelector<HTMLTextAreaElement>('textarea[aria-label="Messaggio"]')
+        ?.focus(),
+    );
   }
   function addImages(files: File[]) {
     if (sendPending.current) return;
@@ -1023,6 +1074,7 @@ function App() {
                   )}
                   <FileCards
                     chatId={current.id}
+                    onRead={openMarkdown}
                     files={(message.attachments || []).filter((file) => file.mime !== 'image/jpeg')}
                   />
                   <div className="message-body">
@@ -1241,6 +1293,22 @@ function App() {
           </>
         )}
       </main>
+      {markdownDocument && (
+        <React.Suspense
+          fallback={
+            <div className="md-loading" role="status">
+              Apro il documento…
+            </div>
+          }
+        >
+          <MarkdownReader
+            key={markdownDocument.key}
+            document={markdownDocument}
+            onClose={() => setMarkdownDocument(undefined)}
+            onAsk={current ? askAboutMarkdown : undefined}
+          />
+        </React.Suspense>
+      )}
       {notificationsOpen && (
         <NotificationSettings settings={settings} onClose={() => setNotificationsOpen(false)} />
       )}
@@ -1358,6 +1426,7 @@ function App() {
       )}
       {preferencesOpen && preferencesTab === 'skills' && (
         <SkillsSettings
+          onRead={openMarkdown}
           chats={chats}
           selected={selected}
           onClose={() => setPreferencesOpen(false)}

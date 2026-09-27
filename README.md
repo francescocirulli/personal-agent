@@ -105,6 +105,14 @@ Verifica eseguita il 26 settembre 2026: build riuscita, 10 test backend e 12 tes
 
 Per ripetere solo la prova di ingresso audio: `SMOKE_AGENTS='' SMOKE_AUDIO_INPUT=true node --import tsx scripts/smoke-live.ts`. Questa prova usa la subscription e brevi chiamate audio a pagamento.
 
+## Lettura Markdown su mobile
+
+Gli allegati Markdown inviati o ricevuti si aprono direttamente nell’app con **Apri**. Il lettore a schermo intero offre **Leggi** e **Sorgente**, indice dei titoli, ricerca con risultato precedente/successivo, testo regolabile e copia dei blocchi di codice. Supporta tabelle scorrevoli, checklist, citazioni e metadati iniziali delle skill. La posizione nelle due viste e la dimensione del testo sono ricordate sul dispositivo; chiudendo il lettore ritrovi la chat, senza cambiare la posizione di lettura per gli aggiornamenti arrivati in background.
+
+**Copia sorgente**, **Scarica** e **Condividi** conservano il documento completo. Per mantenere reattivo il telefono, il lettore visualizza fino a 200.000 caratteri e segnala chiaramente gli eventuali contenuti esclusi; ricerca e indice riguardano l’anteprima. La ricerca evidenzia il testo visibile nella vista Leggi e il Markdown originale nella vista Sorgente, con un limite ai risultati evidenziati. L’HTML incorporato non viene eseguito; le immagini remote si aprono solo su richiesta e i riferimenti a file relativi non aprono percorsi del server.
+
+**Chiedi su questo file** aggiunge alla bozza il nome e l’identificativo dell’allegato, già disponibile all’agente nella conversazione. Il testo esistente e gli allegati della bozza rimangono; non parte alcun messaggio automatico. Le skill globali e del progetto usano lo stesso lettore: facendo una domanda in una chat aperta, viene aggiunta alla bozza una copia Markdown della skill letta, senza modificarla o cambiarne l’assegnazione agli agenti. Restano validi i limiti degli allegati della bozza.
+
 ## Notifiche e risposte non lette
 
 Il pulsante **Notifiche** nello storico (anche nelle impostazioni voce) apre lo stato del dispositivo: attive, disattivate, bloccate o non disponibili. Da qui puoi attivare/disattivare gli avvisi e usare **Invia una prova**. Il permesso viene chiesto solo dopo il tocco su Attiva. Su iPhone apri la PWA dalla schermata Home; il pannello spiega come aggiungerla se necessario. Servono le chiavi VAPID sul server e HTTPS in produzione.

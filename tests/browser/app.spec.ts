@@ -65,8 +65,9 @@ test('skills settings: choose agents, import/edit, project scope, persistence an
     await expect(project.getByText('Claude Code · Codex', { exact: true })).toBeVisible();
     await expect(project.getByRole('button', { name: /Modifica|Elimina/ })).toHaveCount(0);
     await project.getByRole('button', { name: 'Leggi repo-skill' }).click();
-    await expect(modal.locator('pre')).toContainText('Istruzioni della repo');
-    await modal.getByRole('button', { name: 'Chiudi lettura' }).click();
+    const reader = page.getByRole('dialog', { name: 'Documento: repo-skill.md' });
+    await expect(reader.getByRole('heading', { name: 'Istruzioni della repo' })).toBeVisible();
+    await reader.getByRole('button', { name: 'Chiudi lettura' }).click();
     await modal.evaluate((e) => (e.scrollTop = 0));
     await page.screenshot({ path: 'test-results/settings-skills-mobile.png', fullPage: true });
     expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(

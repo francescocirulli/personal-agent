@@ -1,3 +1,4 @@
+import type { MarkdownDocument } from './markdown';
 import { useEffect, useState } from 'react';
 import { X, Plus, Trash2, Pencil, FileText } from 'lucide-react';
 import { api, type Chat } from './api';
@@ -16,10 +17,12 @@ export function SkillsSettings({
   selected,
   onClose,
   onTab,
+  onRead,
 }: {
   chats: Chat[];
   selected: string | null;
   onClose(): void;
+  onRead(document: MarkdownDocument): void;
   onTab(tab: 'voice' | 'mcp' | 'terminal'): void;
 }) {
   const [globals, setGlobals] = useState<SkillView[]>([]);
@@ -33,7 +36,6 @@ export function SkillsSettings({
     [loaded, setLoaded] = useState(false);
   const [editor, setEditor] = useState<{ id?: string; content: string; agents: SkillAgent[] }>();
   const [remove, setRemove] = useState<SkillView>();
-  const [reading, setReading] = useState<{ name: string; content: string }>();
   useEffect(() => {
     let disposed = false;
     const refresh = async () => {
@@ -242,6 +244,22 @@ export function SkillsSettings({
                   <div className="skill-actions">
                     <button
                       className="soft-button"
+                      disabled={pending}
+                      onClick={() =>
+                        void act(async () => {
+                          const full = await api<{ content: string }>(`/skills/${s.id}`);
+                          onRead({
+                            key: `skill:global:${s.id}`,
+                            name: `${s.name}.md`,
+                            content: full.content,
+                          });
+                        })
+                      }
+                    >
+                      <FileText size={15} /> Leggi {s.name}
+                    </button>
+                    <button
+                      className="soft-button"
                       aria-label={`Modifica ${s.name}`}
                       disabled={pending}
                       onClick={() =>
@@ -306,7 +324,6 @@ export function SkillsSettings({
                 value={projectId}
                 onChange={(e) => {
                   setProjectId(e.target.value);
-                  setReading(undefined);
                   setError('');
                 }}
               >
@@ -353,11 +370,14 @@ export function SkillsSettings({
                     disabled={pending}
                     onClick={() =>
                       void act(async () => {
-                        setReading(
-                          await api(
-                            `/conversations/${projectId}/skills/file?path=${encodeURIComponent(s.id)}`,
-                          ),
+                        const full = await api<{ content: string }>(
+                          `/conversations/${projectId}/skills/file?path=${encodeURIComponent(s.id)}`,
                         );
+                        onRead({
+                          key: `skill:project:${projectId}:${s.id}`,
+                          name: `${s.name}.md`,
+                          content: full.content,
+                        });
                       })
                     }
                   >
@@ -366,15 +386,6 @@ export function SkillsSettings({
                 </article>
               ))}
             </div>
-            {reading && (
-              <div className="skill-reading">
-                <h3>{reading.name}</h3>
-                <pre>{reading.content}</pre>
-                <button className="soft-button" onClick={() => setReading(undefined)}>
-                  Chiudi lettura
-                </button>
-              </div>
-            )}
           </>
         )}
       </section>
