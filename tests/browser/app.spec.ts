@@ -573,7 +573,7 @@ test('MCP on mobile: login link, automatic completion and manual return stay out
   await page.screenshot({ path: 'test-results/mcp-manual-mobile.png', fullPage: true });
   await dialog.getByRole('button', { name: 'Completa collegamento', exact: true }).click();
   await expect(
-    dialog.getByText('Collegato · tutte le chat, dal prossimo messaggio.'),
+    dialog.getByText('Collegato · disponibile nelle chat che lo includono.'),
   ).toBeVisible();
   expect(postedReturn).toBe(callback);
   await expect(dialog.getByLabel('Indirizzo dopo il login')).toHaveCount(0);
@@ -584,9 +584,9 @@ test('MCP on mobile: login link, automatic completion and manual return stay out
   await page.getByRole('button', { name: 'Collegamenti MCP · 1 collegati' }).click();
   await dialog.getByRole('button', { name: 'Scollega notion' }).click();
   await dialog.getByRole('button', { name: 'Scollega da tutte le chat', exact: true }).click();
-  await expect(dialog.getByText('Collegato · tutte le chat, dal prossimo messaggio.')).toHaveCount(
-    0,
-  );
+  await expect(
+    dialog.getByText('Collegato · disponibile nelle chat che lo includono.'),
+  ).toHaveCount(0);
 });
 
 test('settings MCP manages shared connections without a chat and syncs other windows', async ({
@@ -612,7 +612,7 @@ test('settings MCP manages shared connections without a chat and syncs other win
   await page.getByRole('button', { name: 'Impostazioni', exact: true }).click();
   await page.getByRole('button', { name: 'MCP', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Collegamenti MCP' });
-  await expect(dialog.getByText(/condivisi da tutte le chat/)).toBeVisible();
+  await expect(dialog.getByText(/una selezione personalizzata/)).toBeVisible();
   await expect(dialog.getByText('calendar', { exact: true })).toBeVisible();
   await dialog.getByRole('button', { name: 'Voce', exact: true }).click();
   await expect(page.getByRole('dialog', { name: 'Impostazioni voce' })).toBeVisible();

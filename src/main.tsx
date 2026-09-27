@@ -55,6 +55,8 @@ import './style.css';
 import { RepositoryPicker } from './RepositoryPicker';
 import { McpConnections } from './McpConnections';
 import { SkillsSettings } from './SkillsSettings';
+import { ChatToolsPicker } from './ChatToolsPicker';
+import type { ChatTools } from '../server/chat-tools';
 const TerminalSettings = React.lazy(() => import('./TerminalSettings'));
 import { BrowserPanel } from './BrowserPanel';
 
@@ -97,6 +99,10 @@ function App() {
     [sending, setSending] = useState(false),
     [creating, setCreating] = useState(false);
   const [repoRequired, setRepoRequired] = useState(false);
+  const [chatTools, setChatTools] = useState<ChatTools>({ mcp: null, skills: null });
+  useEffect(() => {
+    if (create) setChatTools({ mcp: null, skills: null });
+  }, [create]);
   const [chatMenu, setChatMenu] = useState<Chat | null>(null),
     [chatAction, setChatAction] = useState<'rename' | 'delete' | null>(null),
     [chatTitle, setChatTitle] = useState(''),
@@ -523,7 +529,11 @@ function App() {
     setError('');
     setCreating(true);
     try {
-      const chat = await api<Chat>('/conversations', { agent, repo: repo.trim() || null });
+      const chat = await api<Chat>('/conversations', {
+        agent,
+        repo: repo.trim() || null,
+        tools: chatTools,
+      });
       setCreate(false);
       setRepo('');
       choose(chat.id);
@@ -1620,6 +1630,12 @@ function App() {
                   setRepo(value);
                   setRepoRequired(required);
                 }}
+              />
+              <ChatToolsPicker
+                agent={agent}
+                value={chatTools}
+                onChange={setChatTools}
+                disabled={creating}
               />
               <button
                 className="primary full"

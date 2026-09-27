@@ -1,4 +1,5 @@
 import type { Effort } from './agent-effort';
+import type { ChatTools } from './chat-tools';
 import type { ChatImage } from './images';
 import type { ChatFile } from './files';
 import { DatabaseSync } from 'node:sqlite';
@@ -17,6 +18,7 @@ export type RunStatus =
   | 'interrupted'
   | 'awaiting_input';
 export interface Conversation {
+  tools?: ChatTools;
   id: string;
   title: string;
   agent: Agent;
@@ -117,6 +119,13 @@ export class Store {
       this.db.exec('ALTER TABLE run_queue ADD COLUMN bypass_pause INTEGER NOT NULL DEFAULT 0');
     if (
       !this.db
+        .prepare('PRAGMA table_info(conversations)')
+        .all()
+        .some((c) => c.name === 'tools')
+    )
+      this.db.exec('ALTER TABLE conversations ADD COLUMN tools TEXT');
+    if (
+      !this.db
         .prepare('PRAGMA table_info(activity)')
         .all()
         .some((c) => c.name === 'kind')
@@ -173,6 +182,7 @@ export class Store {
     })[];
     return rows.map(({ active_status, latest_status, queued_count, ...chat }) => ({
       ...chat,
+      tools: this.decodeTools(chat.tools),
       status:
         active_status ||
         (latest_status === 'awaiting_input'
@@ -197,17 +207,27 @@ export class Store {
       .run(message.seq, id, message.seq).changes;
   }
   conversation(id: string) {
-    return this.db.prepare('SELECT * FROM conversations WHERE id=?').get(id) as unknown as
-      Conversation | undefined;
+    const row = this.db.prepare('SELECT * FROM conversations WHERE id=?').get(id);
+    return row
+      ? ({ ...row, tools: this.decodeTools(row.tools) } as unknown as Conversation)
+      : undefined;
   }
-  create(agent: Agent, repo: string | null, title: string) {
+  private decodeTools(value: unknown): ChatTools {
+    return typeof value === 'string' ? JSON.parse(value) : { mcp: null, skills: null };
+  }
+  create(
+    agent: Agent,
+    repo: string | null,
+    title: string,
+    tools: ChatTools = { mcp: null, skills: null },
+  ) {
     const id = randomUUID(),
       now = Date.now();
     this.db
       .prepare(
-        'INSERT INTO conversations(id,title,agent,repo,created_at,updated_at) VALUES (?,?,?,?,?,?)',
+        'INSERT INTO conversations(id,title,agent,repo,created_at,updated_at,tools) VALUES (?,?,?,?,?,?,?)',
       )
-      .run(id, title, agent, repo, now, now);
+      .run(id, title, agent, repo, now, now, JSON.stringify(tools));
     return this.conversation(id)!;
   }
   messages(id: string) {
@@ -284,7 +304,12 @@ export class Store {
     if (index < 0) throw new Error('Risposta non trovata.');
     this.db.exec('BEGIN IMMEDIATE');
     try {
-      const chat = this.create(source.agent, source.repo, `${source.title.slice(0, 90)} · Fork`);
+      const chat = this.create(
+        source.agent,
+        source.repo,
+        `${source.title.slice(0, 90)} · Fork`,
+        source.tools,
+      );
       this.db
         .prepare('UPDATE conversations SET model=?,effort=?,title_custom=1 WHERE id=?')
         .run(source.model, source.effort, chat.id);

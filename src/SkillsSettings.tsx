@@ -217,7 +217,10 @@ export function SkillsSettings({
         ) : (
           <>
             <h3>Globali</h3>
-            <p>Valgono per tutte le chat degli agenti che scegli, anche senza repository.</p>
+            <p>
+              Abilita le skill per gli agenti che scegli. Ogni nuova chat può limitarne la
+              selezione, anche senza repository.
+            </p>
             <button
               className="soft-button"
               disabled={pending}
@@ -237,6 +240,22 @@ export function SkillsSettings({
               {globals.map((s) => (
                 <article className="skill-card" key={s.id}>
                   <strong>{s.name}</strong>
+                  <label className="tool-choice">
+                    <input
+                      type="checkbox"
+                      checked={s.enabled !== false}
+                      disabled={pending}
+                      onChange={(e) => {
+                        const enabled = e.target.checked;
+                        void act(async () => {
+                          await api(`/skills/${s.id}/enabled`, { enabled });
+                          setGlobals(await api('/skills'));
+                          setNotice('Disponibilità globale aggiornata dal prossimo messaggio.');
+                        });
+                      }}
+                    />
+                    Abilita globalmente {s.name}
+                  </label>
                   <p>{s.description}</p>
                   <small>
                     {s.agents.map((a) => (a === 'claude' ? 'Claude Code' : 'Codex')).join(' · ')}

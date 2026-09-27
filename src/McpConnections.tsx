@@ -139,8 +139,8 @@ export function McpConnections({
               <button onClick={onTerminalSettings}>Terminale</button>
             </nav>
             <p>
-              I servizi collegati sono condivisi da tutte le chat di Claude Code e Codex. Puoi
-              aggiungerli qui o chiederlo all’agente.
+              Gestisci e abilita i servizi per Claude Code e Codex. Ogni nuova chat può usare le
+              disponibilità globali oppure una selezione personalizzata.
             </p>
             {!connections.length && !error && (
               <p className="settings-note">
@@ -167,6 +167,17 @@ export function McpConnections({
                     </button>
                   </div>
                   <small className="mcp-url">{c.url}</small>
+                  <label className="tool-choice">
+                    <input
+                      type="checkbox"
+                      checked={c.enabled !== false}
+                      disabled={pending}
+                      onChange={(e) =>
+                        void action(`/${c.id}/enabled`, { enabled: e.target.checked })
+                      }
+                    />
+                    Abilita globalmente {c.name}
+                  </label>
                   {removeId === c.id && (
                     <div
                       className="mcp-disconnect"
@@ -199,7 +210,9 @@ export function McpConnections({
                   )}
                   {c.status === 'connected' && (
                     <p className="mcp-success" role="status">
-                      Collegato · tutte le chat, dal prossimo messaggio.
+                      {c.enabled === false
+                        ? 'Collegato · disabilitato globalmente.'
+                        : 'Collegato · disponibile nelle chat che lo includono.'}
                     </p>
                   )}
                   {c.status === 'connecting' && <p role="status">Verifico il collegamento…</p>}

@@ -368,7 +368,7 @@ L’app è il client OAuth del servizio remoto, usando l’SDK MCP ufficiale: di
 
 I token sono conservati atomicamente in `DATA_DIR/mcp/connections.json` con permessi 0600 (directory 0700), separati da messaggi/eventi e da credenziali native delle CLI. I collegamenti sono globali per tutte le chat e per entrambi gli agenti, persistono ai riavvii e sopravvivono all’eliminazione delle chat. La rimozione è locale: il consenso presso il provider non viene revocato automaticamente.
 
-A ogni turno il runner inietta gli MCP con stato collegato: `--mcp-config` per Claude, override `mcp_servers` per Codex. Entrambi usano un gateway HTTP locale autenticato con una credenziale dedicata via ambiente. Il gateway conserva semantica HTTP, sessioni MCP e streaming SSE della risposta; usa il token upstream e non inoltra cookie, header arbitrari o la credenziale locale. Gli strumenti sono disponibili dal messaggio successivo, senza riavviare o ripetere task in corso.
+A ogni turno il runner inietta gli MCP collegati, abilitati globalmente e inclusi nella selezione della chat: `--mcp-config` per Claude, override `mcp_servers` per Codex. Entrambi usano un gateway HTTP locale autenticato con una credenziale temporanea via ambiente, revocata al termine del turno e limitata agli ID ammessi per la chat. Il gateway conserva semantica HTTP, sessioni MCP e streaming SSE della risposta; usa il token upstream e non inoltra cookie, header arbitrari o la credenziale locale. Gli strumenti sono disponibili dal messaggio successivo, senza riavviare o ripetere task in corso.
 
 Supportati MCP remoti Streamable HTTP senza autenticazione o con OAuth/DCR. Non ancora gestiti nel pannello: client pre-registrati, CIMD, bearer token manuali, stdio o trasporto SSE legacy. La prova automatizzata usa un provider OAuth/MCP locale che verifica realmente PKCE e redirect URI; test UI su Chromium/WebKit. La verifica account/provider reale e la prova sul telefono fisico restano distinte dai test automatici.
 
@@ -377,10 +377,18 @@ Supportati MCP remoti Streamable HTTP senza autenticazione o con OAuth/DCR. Non 
 
 La scheda MCP è accanto a Voce nelle Impostazioni e mostra tutti i collegamenti gestiti dall’app: aggiunta, stato, verifica/login e scollegamento con conferma per tutte le chat. Il collegamento rapido nella chat apre lo stesso pannello. Le modifiche sono diffuse con un evento SSE globale; le altre finestre rileggono lo stato anche al ritorno in primo piano.
 
-Gli endpoint autenticati di gestione sono ora `GET/POST /api/mcp` e `POST /api/mcp/:connectionId/{login,complete,delete}`. Gli URL precedenti sotto le chat restano alias per finestre PWA non ancora aggiornate. Il runner carica tutti gli MCP collegati a ogni turno, indipendentemente dalla chat o dall’agente. Eliminare una chat non elimina credenziali MCP; scollegare dal pannello impedisce le chiamate successive da qualunque chat, mentre una chiamata già in corso può terminare.
+Gli endpoint autenticati di gestione sono ora `GET/POST /api/mcp` e `POST /api/mcp/:connectionId/{login,complete,delete}`. Gli URL precedenti sotto le chat restano alias per finestre PWA non ancora aggiornate. Il runner filtra gli MCP collegati usando il flag globale `enabled` e la selezione della chat. Il gateway verifica anche il grant del turno e la disattivazione globale. Eliminare una chat non elimina credenziali MCP; scollegare dal pannello impedisce le chiamate successive da qualunque chat, mentre una chiamata già in corso può terminare.
 
 Migrazione automatica del file esistente: il vecchio `conversationId` diventa soltanto un suggerimento di navigazione `returnToChat`, senza definire lo scope. I nomi duplicati vengono distinti con suffissi evitando collisioni, mantenendo separati account, ID, token e login pendenti. Il callback torna alla chat di origine se esiste, altrimenti a `/?settings=mcp`. Non serve un nuovo login per i collegamenti già funzionanti.
 
+
+### Selezione di MCP e skill per chat
+
+`conversations.tools` conserva JSON `{ mcp: string[] | null, skills: string[] | null }`. `null` eredita la disponibilità globale, `[]` esclude tutta la categoria. La migrazione delle chat esistenti usa l’eredità; `Store.fork` copia le scelte. `POST /api/conversations` valida UUID e limiti con `chatToolsInput`; gli ID assenti dai cataloghi non concedono accesso. `src/ChatToolsPicker.tsx` carica i cataloghi globali nella creazione della chat e aggiorna la disponibilità al cambio agente o agli eventi SSE.
+
+`POST /api/mcp/:connectionId/enabled` e `POST /api/skills/:id/enabled` gestiscono i flag globali senza eliminare dati. Le skill conservano anche le assegnazioni per agente. I flag mancanti nei dati preesistenti equivalgono ad abilitato. Gli snapshot delle skill attive restano immutabili; la disabilitazione MCP blocca invece le nuove chiamate anche da grant già rilasciati, senza annullare una richiesta upstream già partita. L’helper MCP distingue disponibilità globale (`enabled`) e selezione della chat (`selectedForChat`).
+
+I filtri riguardano i cataloghi dell’app; skill del repository, browser integrato e configurazioni native delle CLI mantengono il comportamento precedente. Le prove in `tests/chat-tools.test.ts` coprono filtri, persistenza, fork, eredità e revoca del grant; `tests/browser/chat-tools.spec.ts` copre selezione, cambio agente, reset e disabilitazione globale.
 
 ### Browser condiviso come capacità, sessioni separate per chat
 

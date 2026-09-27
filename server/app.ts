@@ -8,6 +8,7 @@ import {
   type ChatFile,
 } from './files';
 import { effortLevels } from './agent-effort';
+import { chatToolsInput } from './chat-tools';
 import { prepareImages, ImageError, type ChatImage } from './images';
 import { agentModels, modelSchema } from './agent-models';
 import express, { type Request, type Response, type NextFunction } from 'express';
@@ -41,6 +42,7 @@ class HttpError extends Error {
 }
 const hash = (s: string) => createHash('sha256').update(s).digest();
 const chatInput = z.object({
+  tools: chatToolsInput.optional(),
   agent: z.enum(['claude', 'codex']),
   repo: z
     .string()
@@ -183,7 +185,7 @@ export function createApp(config: Config) {
         protocolFailure = '',
         lastStatus = '',
         lastStatusAt = 0;
-      mcpAccess = mcp.access(chat.id);
+      mcpAccess = mcp.access(chat.id, chat.tools?.mcp);
       browserAccess = browser.access(chat.id, signal);
       mcpAccess.servers.push(...browserAccess.servers);
       Object.assign(mcpAccess.env, browserAccess.env);
@@ -533,6 +535,9 @@ export function createApp(config: Config) {
     res.json(terminal.view());
   });
   app.get('/api/skills', (_req, res) => res.json(skills.list()));
+  app.post('/api/skills/:id/enabled', (req, res) =>
+    res.json(skills.setEnabled(String(req.params.id), z.boolean().parse(req.body.enabled))),
+  );
   app.post('/api/skills', (req, res) => res.status(201).json(skills.save(req.body)));
   app.get('/api/skills/:id', (req, res) => res.json(skills.get(String(req.params.id))));
   app.post('/api/skills/:id', (req, res) => res.json(skills.save(req.body, String(req.params.id))));
@@ -605,6 +610,9 @@ export function createApp(config: Config) {
     res.json({ ok: true });
   });
   // Keep old URLs working for PWA windows opened before the global migration.
+  app.post('/api/mcp/:connectionId/enabled', (req, res) =>
+    res.json(mcp.setEnabled(String(req.params.connectionId), z.boolean().parse(req.body.enabled))),
+  );
   app.get(['/api/mcp', '/api/conversations/:id/mcp'], (req, res) => {
     if (req.params.id) getChat(String(req.params.id));
     res.json(mcp.list());
@@ -855,7 +863,7 @@ export function createApp(config: Config) {
   app.get('/api/github', async (_req, res) => res.json(await github.info()));
   app.post('/api/conversations', (req, res) => {
     const input = chatInput.parse(req.body);
-    const chat = store.create(input.agent, input.repo || null, input.title);
+    const chat = store.create(input.agent, input.repo || null, input.title, input.tools);
     publish({ type: 'changed', conversationId: chat.id });
     res.status(201).json(chat);
   });

@@ -37,6 +37,7 @@ export const mcpInput = z
 type Mode = 'automatic' | 'manual';
 type Status = 'connecting' | 'authorization_required' | 'connected' | 'error';
 interface Connection {
+  enabled?: boolean;
   id: string;
   // Navigation hint only: every connection is shared by all chats and both agents.
   returnToChat?: string;
@@ -61,6 +62,7 @@ interface Connection {
   };
 }
 export interface McpView {
+  enabled?: boolean;
   id: string;
   name: string;
   url: string;
@@ -98,7 +100,10 @@ export class McpService {
   private connections = new Map<string, Connection>();
   private locks = new Set<string>();
   private refreshes = new Map<string, Promise<void>>();
-  private runs = new Map<string, string>();
+  private runs = new Map<
+    string,
+    { conversationId: string; selected: string[] | null; allowed: Set<string> }
+  >();
   private file: string;
   private closed = false;
   private controllers = new Set<AbortController>();
@@ -153,6 +158,7 @@ export class McpService {
     const expired = c.pending && c.pending.expiresAt < Date.now();
     return {
       id: c.id,
+      enabled: c.enabled !== false,
       name: c.name,
       url: c.url,
       mode: c.mode,
@@ -484,19 +490,32 @@ export class McpService {
     this.connections.delete(c.id);
     this.save(c);
   }
-  access(conversationId: string): McpAccess {
+  setEnabled(id: string, enabled: boolean) {
+    const c = this.get(id);
+    c.enabled = enabled;
+    this.save(c);
+    return this.view(c);
+  }
+  access(conversationId: string, selected: string[] | null = null): McpAccess {
     const token = secret();
-    this.runs.set(token, conversationId);
+    const grant = { conversationId, selected, allowed: new Set<string>() };
+    this.runs.set(token, grant);
     const env: NodeJS.ProcessEnv = {
       PA_MCP_REQUEST_URL: `http://127.0.0.1:${this.config.port}/api/mcp/agent`,
       PA_MCP_REQUEST_TOKEN: token,
       PA_MCP_REQUEST_SCRIPT: path.resolve('server/mcp-request.mjs'),
     };
     const servers = [...this.connections.values()]
-      .filter((c) => c.status === 'connected')
+      .filter(
+        (c) =>
+          c.status === 'connected' &&
+          c.enabled !== false &&
+          (selected === null || selected.includes(c.id)),
+      )
       .map((c) => {
         const tokenVariable = `PA_MCP_${c.id.replaceAll('-', '_')}`;
-        env[tokenVariable] = c.secret;
+        grant.allowed.add(c.id);
+        env[tokenVariable] = token;
         return {
           name: `pa_${c.name}`,
           url: `http://127.0.0.1:${this.config.port}/api/mcp/gateway/${c.id}`,
@@ -512,8 +531,8 @@ export class McpService {
     };
   }
   async agentRequest(bearer: string | undefined, body: unknown) {
-    const conversationId = this.runs.get(bearer?.replace(/^Bearer /, '') || '');
-    if (!conversationId) throw new McpError(401, 'Sessione agente non autorizzata.');
+    const grant = this.runs.get(bearer?.replace(/^Bearer /, '') || '');
+    if (!grant) throw new McpError(401, 'Sessione agente non autorizzata.');
     const input = z
       .object({
         action: z.enum(['add', 'list']),
@@ -523,13 +542,15 @@ export class McpService {
       .strict()
       .parse(body);
     if (input.action === 'add')
-      await this.add({ name: input.name, url: input.url }, conversationId);
+      await this.add({ name: input.name, url: input.url }, grant.conversationId);
     // Never put OAuth URLs, codes, or credentials into agent tool output/history.
-    return this.list().map(({ id, name, status, error }) => ({
+    return this.list().map(({ id, name, status, error, enabled }) => ({
       id,
       name,
       status,
       error,
+      enabled,
+      selectedForChat: grant.selected === null || grant.selected.includes(id),
     }));
   }
   private async refresh(c: Connection) {
@@ -561,7 +582,10 @@ export class McpService {
   async gateway(req: Request, res: Response) {
     const c = this.get(String(req.params.id));
     const provided = req.headers.authorization?.replace(/^Bearer /, '') || '';
-    if (!equal(provided, c.secret)) throw new McpError(401, 'Collegamento non autorizzato.');
+    if (!this.runs.get(provided)?.allowed.has(c.id))
+      throw new McpError(401, 'Collegamento non autorizzato.');
+    if (c.enabled === false)
+      throw new McpError(403, 'Collegamento disabilitato nelle impostazioni globali.');
     if (c.status !== 'connected') throw new McpError(401, 'Completa il login nella chat.');
     if (c.tokenExpiresAt && c.tokenExpiresAt < Date.now() + 30000) await this.refresh(c);
     const headers: Record<string, string> = { Accept: 'application/json, text/event-stream' };

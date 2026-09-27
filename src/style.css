@@ -1713,6 +1713,37 @@ button svg {
   overflow-y: auto;
   overscroll-behavior: contain;
 }
+.chat-tools-picker {
+  margin: 20px 0;
+}
+.chat-tools-picker summary {
+  cursor: pointer;
+  padding: 12px 0;
+  font-weight: 600;
+}
+.chat-tools-picker fieldset {
+  margin: 14px 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  min-width: 0;
+}
+.modal .tool-choice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0;
+  min-height: 44px;
+  overflow-wrap: anywhere;
+}
+.tool-choice input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+.tool-choice small {
+  display: block;
+}
 .project-mode {
   display: grid;
   grid-template-columns: 1fr 1fr;
