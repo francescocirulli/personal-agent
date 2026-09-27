@@ -563,7 +563,7 @@ function App() {
         repo: repo.trim() || null,
         ...(repo.trim() && workspaceMode ? { workspaceMode } : {}),
         tools: chatTools,
-        routing: agent === 'codex' ? chatRouting : null,
+        routing: agent === 'codex' && chatRouting?.enabled ? chatRouting : null,
       });
       setCreate(false);
       setRepo('');
@@ -1095,7 +1095,13 @@ function App() {
               </h1>
               <ModelPicker key={current.id} chat={current} onSaved={() => refresh(current.id)} />
             </div>
-            <ChatExperiments key={current.id} chat={current} onSaved={() => refresh(current.id)} />
+            {current.routing && (
+              <ChatExperiments
+                key={current.id}
+                chat={current}
+                onSaved={() => refresh(current.id)}
+              />
+            )}
             <div className="messages" aria-live="polite">
               {!current.messages.length && !working && (
                 <div className="empty-chat">

@@ -105,6 +105,53 @@ test('Codex chat creation, effort pool, persisted routing badge, manual override
   }
 });
 
+for (const scenario of ['Codex', 'Codex deselected', 'Claude Code']) {
+  test(`chat experiments are hidden when created without active experiments: ${scenario}`, async ({
+    page,
+    request,
+  }) => {
+    await request.post('/api/settings/experiments', {
+      data: { enabled: true, smartRouting: true },
+    });
+    let chatId = '';
+    try {
+      await page.goto('/');
+      await page.getByRole('button', { name: 'Inizia una conversazione' }).click();
+      const dialog = page.getByRole('dialog', { name: 'Nuova chat', exact: true });
+      await dialog
+        .getByRole('button', {
+          name: scenario === 'Claude Code' ? 'Claude Code' : 'Codex',
+          exact: true,
+        })
+        .click();
+      if (scenario === 'Codex deselected') {
+        await dialog.locator('.chat-experiments-picker > summary').click();
+        const routing = dialog.getByRole('checkbox', { name: 'Routing intelligente' });
+        await routing.check();
+        await routing.uncheck();
+      }
+      const created = page.waitForResponse(
+        (res) => res.url().endsWith('/api/conversations') && res.request().method() === 'POST',
+      );
+      await dialog.getByRole('button', { name: 'Crea chat', exact: true }).click();
+      const chat = await (await created).json();
+      chatId = chat.id;
+      expect(chat.routing).toBeNull();
+      await expect(dialog).toBeHidden();
+      await expect(page.getByRole('textbox', { name: 'Messaggio', exact: true })).toBeVisible();
+      await expect(page.locator('.chat-experiments-picker')).toHaveCount(0);
+      await page.reload();
+      await expect(page.getByRole('textbox', { name: 'Messaggio', exact: true })).toBeVisible();
+      await expect(page.locator('.chat-experiments-picker')).toHaveCount(0);
+    } finally {
+      if (chatId) await request.post(`/api/conversations/${chatId}/delete`);
+      await request.post('/api/settings/experiments', {
+        data: { enabled: false, smartRouting: false },
+      });
+    }
+  });
+}
+
 test('missing credential and catalog cannot enable routing', async ({ page }) => {
   await page.route('**/api/settings/experiments', (route) =>
     route.fulfill({ json: { enabled: true, smartRouting: true, configured: false, demo: false } }),
