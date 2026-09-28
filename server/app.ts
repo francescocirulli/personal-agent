@@ -1,3 +1,5 @@
+import { parseAgentCommand } from '../src/agentCommands';
+import { runAgentCommand } from './agent-commands';
 import { GitService, GitError } from './git';
 import { GitDiffService } from './git-diff';
 import {
@@ -136,6 +138,15 @@ export function createApp(config: Config, routingDependencies: RoutingDependenci
     if (!c) throw new HttpError(404, 'Chat non trovata.');
     return c;
   }
+  function validateCommand(chat: Conversation, text: string, attachments: number) {
+    try {
+      const command = parseAgentCommand(chat.agent, text);
+      if (command && attachments) throw new Error('Invia i comandi senza allegati.');
+      return command;
+    } catch (error) {
+      throw new HttpError(400, (error as Error).message);
+    }
+  }
   function workspaceChats(chat: Conversation) {
     return store
       .list()
@@ -170,16 +181,26 @@ export function createApp(config: Config, routingDependencies: RoutingDependenci
     try {
       const signal = controller.signal;
       const input = file ? await audio.transcribe(file.buffer, file.mimetype, signal) : text!;
+      const agentCommand = parseAgentCommand(chat.agent, input);
+      if (agentCommand && images.length)
+        throw new HttpError(400, 'Invia i comandi senza allegati.');
+      store.setRunCommand(runId, agentCommand);
       const original = store.resumeRequest(runId);
       const prompt = original
         ? `Riprendi il lavoro fermato su richiesta dell’utente. Verifica lo stato attuale e quanto è già stato completato, poi continua ciò che resta da fare senza ripetere operazioni già eseguite.\n\nIndicazioni per la ripresa:\n${input}\n\nRichiesta originale:\n${original.text}`
         : input;
       signal.throwIfAborted();
+      const commandRuns = new Set(
+        store
+          .runs(chat.id)
+          .filter((run) => run.command)
+          .map((run) => run.id),
+      );
       const history = chat.session_id
         ? []
-        : store.messages(chat.id).filter((m) => m.run_id !== runId);
+        : store.messages(chat.id).filter((m) => m.run_id !== runId && !commandRuns.has(m.run_id));
       if (!savedMessage) store.addMessage(chat.id, runId, 'user', prompt, '', images);
-      if (chat.title === 'Nuova conversazione') {
+      if (!agentCommand && chat.title === 'Nuova conversazione') {
         store.db
           .prepare('UPDATE conversations SET title=? WHERE id=? AND title_custom=0')
           .run(prompt.slice(0, 65), chat.id);
@@ -255,7 +276,7 @@ export function createApp(config: Config, routingDependencies: RoutingDependenci
       Object.assign(mcpAccess.env, browserAccess.env);
       skillAccess = await skills.access(chat, runId);
       let executionChat = chat;
-      if (chat.agent === 'codex' && chat.routing?.enabled) {
+      if (!agentCommand && chat.agent === 'codex' && chat.routing?.enabled) {
         const currentCatalog = await catalog('codex', config.demo);
         const flags = experiments();
         const previousSelection = chat.session_id
@@ -321,7 +342,7 @@ export function createApp(config: Config, routingDependencies: RoutingDependenci
         publish({ type: 'changed', conversationId: chat.id });
       }
       signal.throwIfAborted();
-      await runAgent(
+      await (agentCommand ? runAgentCommand : runAgent)(
         config,
         executionChat,
         prompt,
@@ -891,6 +912,8 @@ export function createApp(config: Config, routingDependencies: RoutingDependenci
     if (!message) throw new HttpError(409, 'Il messaggio è già partito o è stato rimosso.');
     const text = z.string().trim().max(40000).parse(req.body.text);
     if (!text && !message.attachments?.length) throw new HttpError(400, 'Scrivi un messaggio.');
+    const command = validateCommand(chat, text, message.attachments?.length || 0);
+    store.setRunCommand(message.run_id, command);
     store.db
       .prepare('UPDATE messages SET text=? WHERE id=?')
       .run(text || 'Analizza gli allegati.', message.id);
@@ -1089,17 +1112,22 @@ export function createApp(config: Config, routingDependencies: RoutingDependenci
   app.get('/api/conversations/:id', async (req, res) => {
     const chat = getChat(req.params.id);
     const runs = store.runs(chat.id);
-    const latest = runs.findLast((run) => run.status !== 'queued');
+    const latest = runs.findLast((run) => run.status !== 'queued' && !run.command);
+    const observation = runs.findLast(
+      (run) =>
+        run.status !== 'queued' &&
+        (!run.command || run.command === '/compact' || run.context_tokens != null),
+    );
     const running = latest?.status === 'running' || latest?.status === 'transcribing';
     const contextUsage =
-      latest?.context_tokens !== null &&
-      latest?.context_tokens !== undefined &&
-      latest.context_observed_at &&
+      observation?.context_tokens !== null &&
+      observation?.context_tokens !== undefined &&
+      observation.context_observed_at &&
       chat.session_id
         ? {
-            inputTokens: latest.context_tokens,
-            contextWindow: latest.context_window ?? null,
-            observedAt: latest.context_observed_at,
+            inputTokens: observation.context_tokens,
+            contextWindow: observation.context_window ?? null,
+            observedAt: observation.context_observed_at,
             state: running ? 'running' : 'last',
           }
         : null;
@@ -1269,6 +1297,7 @@ export function createApp(config: Config, routingDependencies: RoutingDependenci
             .trim()
             .max(40000)
             .parse(req.body?.text ?? '');
+      validateCommand(chat, text || '', imageFiles.length + documentFiles.length);
       if (!audioFile && !text && !imageFiles.length && !documentFiles.length)
         throw new HttpError(400, 'Scrivi un messaggio o allega un file.');
       if (audioFile && !config.audioKey)
@@ -1342,6 +1371,7 @@ export function createApp(config: Config, routingDependencies: RoutingDependenci
     const runs = store.runs(chat.id);
     const source = runs.find((run) => run.id === sourceRunId);
     if (!source) throw new HttpError(404, 'Lavoro non trovato in questa chat.');
+    if (source.command) throw new HttpError(409, 'Invia di nuovo il comando per riprovarlo.');
     if (closing) throw new HttpError(503, 'Il server si sta riavviando. Riprova tra poco.');
     const existing = store.db
       .prepare('SELECT run_id FROM run_resumptions WHERE source_run_id=?')

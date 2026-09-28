@@ -100,7 +100,7 @@ export function ModelPicker({ chat, onSaved }: { chat: Chat; onSaved(): Promise<
       ? Math.min(100, (contextUsage.inputTokens / contextUsage.contextWindow) * 100)
       : null;
   const contextLabel = contextUsage
-    ? `Ultimo contesto inviato alla CLI: ${contextUsage.inputTokens.toLocaleString('it-IT')} token${
+    ? `Ultimo contesto rilevato dalla CLI: ${contextUsage.inputTokens.toLocaleString('it-IT')} token${
         contextUsage.contextWindow
           ? ` su ${contextUsage.contextWindow.toLocaleString('it-IT')} (${contextPercentage!.toLocaleString('it-IT', { maximumFractionDigits: 1 })}%)`
           : ''

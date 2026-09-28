@@ -1,3 +1,4 @@
+import { parseAgentCommand, type AgentCommand } from '../src/agentCommands';
 import type { Effort } from './agent-effort';
 import type { RoutingConfig, RoutingRecord } from './experiments';
 import type { ChatTools } from './chat-tools';
@@ -52,6 +53,7 @@ export interface Message {
   created_at: number;
 }
 export interface Run {
+  command?: AgentCommand | null;
   actual_model?: string | null;
   context_tokens?: number | null;
   context_window?: number | null;
@@ -91,6 +93,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS subscriptions (endpoint TEXT PRIMARY KEY, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, expires INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS run_commands (run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE, command TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS run_routing (run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS run_models (run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE, model TEXT NOT NULL, session_id TEXT);
       CREATE TABLE IF NOT EXISTS run_context (run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE, session_id TEXT NOT NULL, input_tokens INTEGER NOT NULL, context_window INTEGER, observed_at INTEGER NOT NULL);
@@ -343,6 +346,10 @@ export class Store {
         .all(conversationId) as unknown as Message[]
     ).map((m) => ({ ...m, attachments: this.attachments(m.id) }));
   }
+  setRunCommand(runId: string, command: AgentCommand | null) {
+    this.db.prepare('DELETE FROM run_commands WHERE run_id=?').run(runId);
+    if (command) this.db.prepare('INSERT INTO run_commands VALUES (?,?)').run(runId, command);
+  }
   resumeRequest(runId: string) {
     return this.db
       .prepare(
@@ -364,6 +371,7 @@ export class Store {
         .prepare('INSERT INTO runs VALUES (?,?,?,?,?,?)')
         .run(runId, conversationId, 'queued', null, now, now);
       this.writeMessage(conversationId, runId, 'user', text, '', images);
+      this.setRunCommand(runId, parseAgentCommand(this.conversation(conversationId)!.agent, text));
       this.db.prepare('INSERT INTO run_queue(run_id) VALUES (?)').run(runId);
       if (resume) {
         this.db
@@ -422,6 +430,9 @@ export class Store {
             .prepare(
               'INSERT INTO run_routing(run_id,data) SELECT ?,data FROM run_routing WHERE run_id=?',
             )
+            .run(runId, message.run_id);
+          this.db
+            .prepare('INSERT INTO run_commands SELECT ?,command FROM run_commands WHERE run_id=?')
             .run(runId, message.run_id);
         }
         const id = this.writeMessage(
@@ -487,7 +498,7 @@ export class Store {
   runs(id: string) {
     return this.db
       .prepare(
-        'SELECT r.*,j.data AS routing,m.model AS actual_model,c.input_tokens AS context_tokens,c.context_window,c.observed_at AS context_observed_at FROM runs r LEFT JOIN run_routing j ON j.run_id=r.id LEFT JOIN run_models m ON m.run_id=r.id LEFT JOIN run_context c ON c.run_id=r.id WHERE conversation_id=? ORDER BY created_at,r.rowid',
+        'SELECT r.*,cmd.command,j.data AS routing,m.model AS actual_model,c.input_tokens AS context_tokens,c.context_window,c.observed_at AS context_observed_at FROM runs r LEFT JOIN run_commands cmd ON cmd.run_id=r.id LEFT JOIN run_routing j ON j.run_id=r.id LEFT JOIN run_models m ON m.run_id=r.id LEFT JOIN run_context c ON c.run_id=r.id WHERE conversation_id=? ORDER BY created_at,r.rowid',
       )
       .all(id)
       .map(({ routing, ...run }) => ({

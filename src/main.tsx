@@ -1,3 +1,4 @@
+import { CommandSuggestions } from './CommandSuggestions';
 import { SettingsTabs, type SettingsTab } from './SettingsTabs';
 import { ExperimentalSettings } from './ExperimentalSettings';
 import { ChatExperiments, ChatExperimentsPicker } from './ChatExperimentsPicker';
@@ -1298,6 +1299,15 @@ function App() {
                   if (draft.trim() || images.length) void send(draft);
                 }}
               >
+                <CommandSuggestions
+                  agent={current.agent}
+                  draft={draft}
+                  disabled={sending || !draftReady}
+                  onSelect={(value) => {
+                    setDraft(value);
+                    messageInput.current?.focus();
+                  }}
+                />
                 {images.length > 0 && (
                   <ImageAttachments
                     files={images}
@@ -1327,7 +1337,7 @@ function App() {
                       ? 'Rispondi per proseguire…'
                       : working
                         ? 'Aggiungi alla coda…'
-                        : 'Scrivi un messaggio…'
+                        : 'Scrivi un messaggio o / per i comandi…'
                   }
                   value={draft}
                   disabled={sending || !draftReady}

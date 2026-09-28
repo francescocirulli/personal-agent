@@ -67,6 +67,21 @@ The UI calculates a percentage only when the CLI provides a context-window size.
 Claude runs explicitly request automatic compaction with `--autocompact auto`;
 Codex retains its configured/model default automatic-compaction threshold.
 
+Slash commands are allowlisted per agent and dispatched as ordinary scheduled runs.
+The cascading `run_commands` table distinguishes them from model turns; forks copy
+this metadata, and their reports are excluded from reconstructed model history.
+Command input bypasses prompt wrappers and smart routing. Claude receives the exact
+slash command and only native command results are accepted. Codex diagnostics and
+compaction use a short-lived stdio App Server with the runner's filtered environment
+and subscription authentication. Diagnostics never start a generation turn;
+compaction resumes only the chat's existing thread and waits for completion events,
+not just the initial RPC acknowledgement. No two writers run against that chat
+through the app at once. Child processes are bounded by timeout and cancellation.
+Unknown commands and attachments are rejected before enqueueing. Diagnostics keep
+previous model/context observations; compaction invalidates pre-compaction context
+until a new measurement arrives. Command outputs do not create a CLI session for an
+otherwise empty chat. Normal task execution continues to use the existing runner.
+
 Cancellation terminates the process group and escalates after a grace period. At shutdown, new starts are blocked; after restart, previously active runs are marked interrupted instead of replaying actions. Pending messages can resume automatically unless their queue is paused.
 
 Explicit resume of the latest cancelled run creates a new queued turn in the same conversation, preserving the old outcome. The additive `run_resumptions` table links each source run to one continuation and its original request message, making repeated resume requests idempotent across restarts. The continuation reuses the current session, copies the original attachments, and asks the agent to inspect existing work before continuing. It bypasses queue pause for that turn only; global capacity, workspace Git locks, and shutdown guards still apply. No process checkpoint is restored.

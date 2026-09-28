@@ -102,6 +102,7 @@ export function WorkStatus({
   const stopped = !working && run?.status === 'cancelled';
   const canResume =
     stopped &&
+    !run.command &&
     chat.messages.some((message) => message.run_id === run.id && message.role === 'user');
   useEffect(() => {
     if (!run || (!busy(run.status) && run.status !== 'queued')) return;

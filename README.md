@@ -180,6 +180,22 @@ After stopping a task, use **Riprendi** on the **Fermato** card to continue it i
 
 **Voice:** set `OPENROUTER_API_KEY` and recreate the container. Speech uses separately billed audio APIs; text-only agent use does not need this key. The defaults are `openai/gpt-4o-transcribe`, `google/gemini-3.8-flash-lite-tts`, and voice `Kore`. These are code defaults, not a guarantee of current provider availability. Choose supported models and a compatible voice in the app's voice settings. Saved settings override `.env` defaults until reset.
 
+**Chat commands:** type `/` in the message composer to see the commands available
+for the selected agent. Claude Code supports `/context`, `/usage`, and `/compact`;
+Codex supports `/status`, `/usage`, and `/compact`. Send commands without arguments
+or attachments. They use the regular persistent queue, can be stopped, and save
+results in the chat. Run `/compact` after the session has started; it summarizes
+history and can use subscription allowance. Retry a stopped command by sending it
+again. Unsupported commands return an error rather than becoming model prompts.
+
+Claude's `/context` reports the CLI's context breakdown. Its non-interactive
+`/usage` output can describe the current invocation rather than subscription
+quota. Codex's `/status` reads the saved session and latest request context;
+`/usage` reads account token activity and rate limits through the official
+App Server. Unavailable metrics are shown as unavailable. These commands require
+compatible CLI versions (verified with Claude Code 2.1.280 and Codex 0.156.1).
+Demo mode labels command results as simulated and never calls either CLI.
+
 **Push notifications:** generate a key pair once:
 
 ```sh
