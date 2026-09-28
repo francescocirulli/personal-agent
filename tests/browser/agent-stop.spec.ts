@@ -12,6 +12,8 @@ for (const agent of ['codex', 'claude'] as const) {
     page,
   }) => {
     const dir = await mkdtemp(path.join(tmpdir(), 'pa-stop-ui-'));
+    const previousCodexHome = process.env.AGENT_CODEX_HOME;
+    process.env.AGENT_CODEX_HOME = dir;
     const bin = path.join(dir, 'agent.cjs');
     await writeFile(
       path.join(dir, 'child.cjs'),
@@ -29,12 +31,24 @@ setInterval(() => {}, 1000);
       bin,
       `#!/usr/bin/env node
 const { spawn } = require('node:child_process');
-const { writeFileSync } = require('node:fs');
+const { writeFileSync, readFileSync } = require('node:fs');
 const path = require('node:path');
 const claude = process.argv.includes('-p');
+const { DatabaseSync } = require('node:sqlite');
+const db = claude ? null : new DatabaseSync(path.join(process.env.CODEX_HOME, 'state_5.sqlite'));
+db?.exec('CREATE TABLE IF NOT EXISTS threads (id TEXT PRIMARY KEY, model TEXT, updated_at INTEGER)');
+const reportModel = () => {
+  let model = 'fixture-model-one';
+  try { model = readFileSync(path.join(__dirname, 'model-choice'), 'utf8'); } catch {}
+  if (claude) console.log(JSON.stringify({ type: 'assistant', message: { model, content: [] } }));
+  else db.prepare('INSERT INTO threads VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET model=excluded.model,updated_at=excluded.updated_at')
+    .run('stop-resume-session', model, Math.floor(Date.now() / 1000));
+};
 console.log(JSON.stringify(claude
   ? { type: 'system', subtype: 'init', session_id: 'stop-resume-session' }
   : { type: 'thread.started', thread_id: 'stop-resume-session' }));
+reportModel();
+setInterval(reportModel, 300);
 let input = '';
 process.stdin.on('data', data => input += data);
 process.stdin.on('end', () => writeFileSync(path.join(__dirname, 'input.json'), JSON.stringify({ input, args: process.argv.slice(2) })));
@@ -93,6 +107,22 @@ setInterval(() => {}, 1000);
       const pids = JSON.parse(await exists('ready.json')) as { parent: number; child: number };
       const card = page.getByRole('region', { name: 'Stato del lavoro' });
       await expect(card.getByText('In corso', { exact: true })).toBeVisible();
+      const modelPicker = page.locator('.model-picker');
+      await expect(modelPicker.locator('summary')).toContainText('fixture-model-one');
+      await writeFile(path.join(dir, 'model-choice'), 'fixture-model-two');
+      await expect(modelPicker.locator('summary')).toContainText('fixture-model-two');
+      await page.request.post(`${config.origin}/api/conversations/${chat.id}/model`, {
+        data: { model: 'fixture-next-choice' },
+      });
+      await modelPicker.locator('summary').click();
+      await expect(modelPicker.getByRole('status')).toHaveText('In uso: fixture-model-two');
+      await expect(modelPicker.getByLabel('Modello della chat')).toHaveValue('fixture-next-choice');
+      await expect(modelPicker.locator('summary')).toContainText('fixture-model-two');
+      await modelPicker.getByLabel('Modello della chat').selectOption('');
+      await modelPicker.locator('summary').click();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
       const stop = card.getByRole('button', { name: 'Ferma task' });
       await expect(stop).toBeEnabled();
       expect((await stop.boundingBox())!.height).toBeGreaterThanOrEqual(44);
@@ -115,6 +145,12 @@ setInterval(() => {}, 1000);
       }
       expect(runtime.store.runs(chat.id)[0].status).toBe('cancelled');
       await page.reload();
+      await expect(modelPicker.locator('summary')).toContainText('fixture-model-two');
+      await modelPicker.locator('summary').click();
+      await expect(modelPicker.getByRole('status')).toHaveText(
+        'Ultimo modello usato: fixture-model-two',
+      );
+      await modelPicker.locator('summary').click();
       await expect(card.getByText('Fermato', { exact: true })).toBeVisible();
       await expect(stop).toHaveCount(0);
       const resume = card.getByRole('button', { name: 'Riprendi task' });
@@ -153,6 +189,8 @@ setInterval(() => {}, 1000);
       await runtime.close();
       await new Promise<void>((resolve) => server.close(() => resolve()));
       await rm(dir, { recursive: true, force: true });
+      if (previousCodexHome === undefined) delete process.env.AGENT_CODEX_HOME;
+      else process.env.AGENT_CODEX_HOME = previousCodexHome;
     }
   });
 }

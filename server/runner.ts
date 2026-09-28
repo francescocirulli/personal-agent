@@ -11,6 +11,7 @@ import type { Conversation } from './store';
 import { normalize, type Normalized } from './protocol';
 import type { McpAccess, McpAgentServer } from './mcp';
 import { toolEnvironment } from './tool-environment';
+import { codexSessionModel } from './session-model';
 
 const VOICE_RULES = `Rispondi in italiano. Segui le istruzioni dell'utente e le regole del repository; leggi CLAUDE.md e AGENTS.md applicabili anche se non caricati automaticamente dalla tua CLI. Puoi svolgere il lavoro richiesto autonomamente nel rispetto di quelle regole. Concludi ogni risposta con <voce>una versione parlata chiara, senza codice o URL</voce>. Nella discussione includi la risposta e le domande necessarie; a fine task riassumi l'esito reale. Il resto della risposta può contenere markdown e dettagli tecnici. Non dichiarare risultati non verificati. Il bridge può anteporre alla richiesta un catalogo delle skill aggiornato per il turno corrente: usa quel catalogo per decidere quali skill globali dell’app sono disponibili, sostituendo le assegnazioni dei turni precedenti.
 Se il lavoro non può proseguire senza una risposta o un intervento dell’utente, formula la domanda o indica l’intervento nella risposta finale e inserisci il marcatore <richiesta_input/> su una riga separata fuori dai blocchi di codice, prima del tag voce. Usalo solo per una dipendenza reale; non per offerte facoltative di continuare. Il bridge mostrerà «Serve una risposta» e metterà in pausa la coda.
@@ -334,6 +335,25 @@ export async function runAgent(
     return;
   }
   let imageDir: string | undefined;
+  let modelTimer: ReturnType<typeof setInterval> | undefined;
+  let modelRead: Promise<void> | undefined;
+  let sessionId: string | undefined;
+  let lastModel: string | null = null;
+  const startedAt = Date.now();
+  const refreshModel = () => {
+    if (modelRead || !sessionId || signal.aborted) return modelRead;
+    modelRead = codexSessionModel(sessionId, startedAt)
+      .then((model) => {
+        if (model && model !== lastModel && !signal.aborted) {
+          lastModel = model;
+          emit({ type: 'model', value: model });
+        }
+      })
+      .finally(() => {
+        modelRead = undefined;
+      });
+    return modelRead;
+  };
   try {
     input = historyPromptFor(input, history, chat.workspace_mode);
     images = [...history.flatMap((message) => message.images), ...images];
@@ -362,11 +382,21 @@ export async function runAgent(
         } catch {
           return;
         }
-        for (const e of normalize(chat.agent, event)) emit(e);
+        for (const e of normalize(chat.agent, event)) {
+          emit(e);
+          if (chat.agent === 'codex' && e.type === 'session') {
+            sessionId = e.value;
+            void refreshModel();
+            if (!modelTimer) modelTimer = setInterval(() => void refreshModel(), 1000);
+          }
+        }
       },
       { ...agentEnvironment(config), ...access?.env },
     );
   } finally {
+    clearInterval(modelTimer);
+    await modelRead;
+    await refreshModel();
     if (imageDir) await rm(imageDir, { recursive: true, force: true });
   }
 }

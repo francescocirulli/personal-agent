@@ -2507,6 +2507,15 @@ button svg {
   gap: 5px;
   font-size: 12px;
 }
+.model-picker-observed {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #242424;
+  border: 1px solid var(--border);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
 .model-picker select {
   min-width: 0;
   width: 100%;
@@ -2600,6 +2609,20 @@ button svg {
   }
   .model-picker-agent {
     display: none;
+  }
+  .model-picker-current {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+  .model-picker-name {
+    max-width: 100%;
+  }
+  .model-picker-effort {
+    font-size: 10px;
+  }
+  .model-picker-effort::before {
+    content: none;
   }
   .model-picker-panel {
     right: auto;

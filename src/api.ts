@@ -7,7 +7,12 @@ import type {
   WorkspaceMode,
 } from '../server/store';
 export type { WorkspaceMode };
-export type Chat = Conversation & { status?: RunStatus | null; unread_count?: number };
+export type Chat = Conversation & {
+  status?: RunStatus | null;
+  unread_count?: number;
+  actualModel?: { id: string; state: 'running' | 'last' } | null;
+  modelPending?: boolean;
+};
 export type Detail = Chat & {
   messages: Message[];
   runs: Run[];

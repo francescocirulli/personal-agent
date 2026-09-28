@@ -24,6 +24,7 @@ import {
 } from './chat-tools';
 import { prepareImages, ImageError, type ChatImage } from './images';
 import { agentModels, modelSchema } from './agent-models';
+import { codexSessionModel } from './session-model';
 import express, { type Request, type Response, type NextFunction } from 'express';
 import multer from 'multer';
 import { randomUUID, randomBytes, createHash, timingSafeEqual } from 'node:crypto';
@@ -332,6 +333,19 @@ export function createApp(config: Config, routingDependencies: RoutingDependenci
               .prepare('UPDATE conversations SET session_id=? WHERE id=?')
               .run(e.value, chat.id);
           if (e.type === 'failure') protocolFailure = e.value;
+          if (e.type === 'model') {
+            const previous = store.db
+              .prepare('SELECT model FROM run_models WHERE run_id=?')
+              .get(runId);
+            if (previous?.model !== e.value) {
+              store.db
+                .prepare(
+                  'INSERT INTO run_models(run_id,model,session_id) VALUES (?,?,?) ON CONFLICT(run_id) DO UPDATE SET model=excluded.model,session_id=excluded.session_id',
+                )
+                .run(runId, e.value, store.conversation(chat.id)?.session_id ?? null);
+              publish({ type: 'changed', conversationId: chat.id });
+            }
+          }
           if (e.type === 'text') {
             lastText = e.value;
             publish({
@@ -1058,12 +1072,29 @@ export function createApp(config: Config, routingDependencies: RoutingDependenci
     if (changed) publish({ type: 'read', conversationId: chat.id });
     res.json({ unreadCount: store.unreadCount() });
   });
-  app.get('/api/conversations/:id', (req, res) => {
+  app.get('/api/conversations/:id', async (req, res) => {
     const chat = getChat(req.params.id);
+    const runs = store.runs(chat.id);
+    const latest = runs.findLast((run) => run.status !== 'queued');
+    const running = latest?.status === 'running' || latest?.status === 'transcribing';
+    const saved = chat.session_id
+      ? store.db
+          .prepare('SELECT model FROM run_models WHERE run_id=? AND session_id=?')
+          .get(latest?.id ?? '', chat.session_id)
+      : undefined;
+    // Backfill existing Codex sessions without rewriting old run history.
+    const model =
+      typeof saved?.model === 'string'
+        ? saved.model
+        : !running && !config.demo && chat.agent === 'codex' && chat.session_id
+          ? await codexSessionModel(chat.session_id)
+          : null;
     res.json({
       ...chat,
+      actualModel: model ? { id: model, state: running ? 'running' : 'last' } : null,
+      modelPending: running && !model,
       messages: store.messages(chat.id),
-      runs: store.runs(chat.id),
+      runs,
       activity: store.activities(chat.id),
       queue: store.queue(chat.id),
     });

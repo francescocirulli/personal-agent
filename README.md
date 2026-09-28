@@ -141,6 +141,14 @@ Complete the login in your browser. The explicit `CODEX_HOME` matches `AGENT_COD
 
 Create a chat with the configured agent and send a small text request. A successful health check or demo response does not verify a real agent login. Models available to your account depend on the provider and CLI version.
 
+The chat model picker displays the model reported by the running CLI, or the last
+observed model when using the CLI/session default. Its expanded panel distinguishes
+the observed model from the selection for the next message. Claude Code reports
+the model through structured events; Codex uses the exact thread's model metadata
+in its local state database. Updates appear during execution and survive reloads.
+If the CLI has not reported a model or its metadata format is unsupported, the UI
+shows that it has not been detected; catalog order is never treated as a default.
+
 ### 6. Connect GitHub (optional)
 
 For repository browsing, cloning, and Git operations, authenticate the bundled GitHub CLI:

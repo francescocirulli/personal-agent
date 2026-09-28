@@ -1,10 +1,23 @@
-export type Normalized = { type: 'session' | 'text' | 'status' | 'failure'; value: string };
+import { reportedModel } from './session-model';
+
+export type Normalized = {
+  type: 'session' | 'model' | 'text' | 'status' | 'failure';
+  value: string;
+};
 // Only selected protocol fields reach the UI; no raw tool output, credentials or reasoning.
 export function normalize(agent: 'claude' | 'codex', e: any): Normalized[] {
   const out: Normalized[] = [];
   if (agent === 'claude') {
     if (e.type === 'system' && e.subtype === 'init' && e.session_id)
       out.push({ type: 'session', value: e.session_id });
+    const model = reportedModel(
+      e.type === 'system' && e.subtype === 'init'
+        ? e.model
+        : e.type === 'assistant' && !e.parent_tool_use_id
+          ? e.message?.model
+          : null,
+    );
+    if (model) out.push({ type: 'model', value: model });
     if (e.type === 'assistant' && !e.parent_tool_use_id)
       for (const b of e.message?.content || []) {
         if (b.type === 'text') out.push({ type: 'text', value: b.text });

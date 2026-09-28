@@ -48,6 +48,16 @@ Messages and attachments are persisted before execution. There is one active run
 
 The runner launches `claude -p` or `codex exec`, captures structured output, and saves the CLI session identifier for future resume. Public progress and tool activity are normalized for the UI. Events are persisted and replayed over SSE when a client reconnects. Closing the browser or an SSE connection does not stop work.
 
+Resolved models are stored separately from requested selections in `run_models`,
+with cascading run deletion and the originating CLI session identifier. Claude
+init and main-assistant events supply the model; subagent output is excluded.
+Codex exec does not expose this field in its JSON stream, so a best-effort read-only
+adapter polls the exact thread's validated model metadata in the newest local
+`state_*.sqlite` while the process runs. Missing schemas or metadata do not fail the
+run. The detail endpoint can also resolve pre-existing idle Codex sessions without
+rewriting historical runs. SSE changes refresh the UI; session resets and new runs
+without observations do not inherit an old model as their current selection.
+
 Cancellation terminates the process group and escalates after a grace period. At shutdown, new starts are blocked; after restart, previously active runs are marked interrupted instead of replaying actions. Pending messages can resume automatically unless their queue is paused.
 
 Explicit resume of the latest cancelled run creates a new queued turn in the same conversation, preserving the old outcome. The additive `run_resumptions` table links each source run to one continuation and its original request message, making repeated resume requests idempotent across restarts. The continuation reuses the current session, copies the original attachments, and asks the agent to inspect existing work before continuing. It bypasses queue pause for that turn only; global capacity, workspace Git locks, and shutdown guards still apply. No process checkpoint is restored.

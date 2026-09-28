@@ -78,6 +78,17 @@ export function ModelPicker({ chat, onSaved }: { chat: Chat; onSaved(): Promise<
   const modelName = chat.model
     ? catalog.models.find((model) => model.id === chat.model)?.name || chat.model
     : 'Modello predefinito';
+  const actual = chat.actualModel;
+  const displayedModel = chat.modelPending
+    ? 'Rilevamento modello…'
+    : actual?.state === 'running' || (!chat.model && actual)
+      ? actual!.id
+      : modelName;
+  const modelStatus = actual
+    ? `${actual.state === 'running' ? 'In uso' : 'Ultimo modello usato'}: ${actual.id}`
+    : chat.modelPending
+      ? 'In attesa del modello comunicato dalla CLI.'
+      : 'Modello effettivo non ancora rilevato.';
   return (
     <details className="model-picker">
       <summary>
@@ -86,12 +97,12 @@ export function ModelPicker({ chat, onSaved }: { chat: Chat; onSaved(): Promise<
           <span className="model-picker-agent">
             {chat.agent === 'claude' ? 'Claude Code' : 'Codex'}
           </span>
-          <span className="model-picker-name">
+          <span className="model-picker-name" title={modelStatus}>
             {automatic
-              ? 'Automatico · JEV'
+              ? `Automatico · JEV${actual ? ` · ${actual.id}` : ''}`
               : chat.routing?.enabled
-                ? `JEV sospeso · ${modelName}`
-                : modelName}
+                ? `JEV sospeso · ${displayedModel}`
+                : displayedModel}
           </span>
           <span className="model-picker-effort">
             {automatic ? 'effort auto' : (chat.effort ?? defaultEffort)}
@@ -100,6 +111,9 @@ export function ModelPicker({ chat, onSaved }: { chat: Chat; onSaved(): Promise<
         <ChevronDown size={16} aria-hidden="true" />
       </summary>
       <div className="model-picker-panel">
+        <p className="model-picker-observed" role="status">
+          {modelStatus}
+        </p>
         <p className="settings-note">
           {chat.routing?.enabled
             ? `Riserva: ${modelName} · ${chat.effort}. Una scelta manuale disattiva JEV.`
@@ -118,7 +132,9 @@ export function ModelPicker({ chat, onSaved }: { chat: Chat; onSaved(): Promise<
               } else void save(e.target.value || null);
             }}
           >
-            <option value="">Predefinito CLI / sessione</option>
+            <option value="">
+              Predefinito CLI / sessione{!chat.model && actual ? ` · ${actual.id}` : ''}
+            </option>
             {chat.model && !catalog.models.some((m) => m.id === chat.model) && (
               <option value={chat.model}>{chat.model}</option>
             )}
