@@ -1249,6 +1249,15 @@ function App() {
                 onStop={() =>
                   api(`/conversations/${current.id}/cancel`, {}).catch((e) => setError(e.message))
                 }
+                onResume={async (runId) => {
+                  setError('');
+                  try {
+                    await api(`/conversations/${current.id}/runs/${runId}/resume`, {});
+                    await refresh(current.id);
+                  } catch (e) {
+                    setError((e as Error).message);
+                  }
+                }}
                 onChanges={(mode) => {
                   stopVoice();
                   setDiffMode(mode);

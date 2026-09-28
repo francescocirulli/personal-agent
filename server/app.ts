@@ -168,7 +168,11 @@ export function createApp(config: Config, routingDependencies: RoutingDependenci
     let skillAccess: Awaited<ReturnType<SkillService['access']>> | undefined;
     try {
       const signal = controller.signal;
-      const prompt = file ? await audio.transcribe(file.buffer, file.mimetype, signal) : text!;
+      const input = file ? await audio.transcribe(file.buffer, file.mimetype, signal) : text!;
+      const original = store.resumeRequest(runId);
+      const prompt = original
+        ? `Riprendi il lavoro fermato su richiesta dell’utente. Verifica lo stato attuale e quanto è già stato completato, poi continua ciò che resta da fare senza ripetere operazioni già eseguite.\n\nIndicazioni per la ripresa:\n${input}\n\nRichiesta originale:\n${original.text}`
+        : input;
       signal.throwIfAborted();
       const history = chat.session_id
         ? []
@@ -1273,6 +1277,51 @@ export function createApp(config: Config, routingDependencies: RoutingDependenci
     getChat(String(req.params.id));
     active.get(String(req.params.id))?.controller.abort();
     res.status(202).json({ ok: true });
+  });
+  app.post('/api/conversations/:id/runs/:runId/resume', (req, res) => {
+    const chat = getChat(String(req.params.id));
+    const sourceRunId = String(req.params.runId);
+    const runs = store.runs(chat.id);
+    const source = runs.find((run) => run.id === sourceRunId);
+    if (!source) throw new HttpError(404, 'Lavoro non trovato in questa chat.');
+    if (closing) throw new HttpError(503, 'Il server si sta riavviando. Riprova tra poco.');
+    const existing = store.db
+      .prepare('SELECT run_id FROM run_resumptions WHERE source_run_id=?')
+      .get(sourceRunId);
+    if (existing) return res.status(202).json({ runId: existing.run_id });
+    if (
+      source.status !== 'cancelled' ||
+      runs.filter((run) => run.status !== 'queued').at(-1)?.id !== sourceRunId
+    )
+      throw new HttpError(409, 'Puoi riprendere solo l’ultimo lavoro fermato.');
+    if (active.has(chat.id) && !active.get(chat.id)!.controller.signal.aborted)
+      throw new HttpError(409, 'Un lavoro è già in esecuzione in questa chat.');
+    if (workspaceGitInProgress(chat) || deletingChats.has(chat.id))
+      throw new HttpError(
+        409,
+        'Operazione sulla chat o sul repository in corso. Riprova al termine.',
+      );
+    if (active.size >= config.maxRuns && !active.has(chat.id))
+      throw new HttpError(429, 'Tutti gli agenti sono occupati. Riprova tra poco.');
+    if (store.queue(chat.id).length >= 50)
+      throw new HttpError(429, 'La coda contiene già 50 messaggi. Attendi che si liberi.');
+    const message =
+      store.resumeRequest(sourceRunId) ||
+      store.messages(chat.id).find((m) => m.run_id === sourceRunId && m.role === 'user');
+    if (!message)
+      throw new HttpError(409, 'La richiesta non è stata salvata. Invia di nuovo il messaggio.');
+    const runId = store.enqueue(
+      chat.id,
+      'Riprendi il lavoro fermato.',
+      store.messageFiles(message.id),
+      {
+        sourceRunId,
+        messageId: message.id,
+      },
+    );
+    publish({ type: 'queued', conversationId: chat.id, runId });
+    drainQueue();
+    res.status(202).json({ runId });
   });
   app.get('/api/events', (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream');

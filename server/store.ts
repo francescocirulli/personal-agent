@@ -88,6 +88,11 @@ export class Store {
       CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, expires INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS run_routing (run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE, data TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS run_resumptions (
+        source_run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE,
+        run_id TEXT NOT NULL UNIQUE REFERENCES runs(id) ON DELETE CASCADE,
+        request_message_id TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE
+      );
     `);
     if (
       !this.db
@@ -332,7 +337,19 @@ export class Store {
         .all(conversationId) as unknown as Message[]
     ).map((m) => ({ ...m, attachments: this.attachments(m.id) }));
   }
-  enqueue(conversationId: string, text: string, images: ChatFile[]) {
+  resumeRequest(runId: string) {
+    return this.db
+      .prepare(
+        'SELECT m.* FROM run_resumptions r JOIN messages m ON m.id=r.request_message_id WHERE r.run_id=?',
+      )
+      .get(runId) as unknown as Message | undefined;
+  }
+  enqueue(
+    conversationId: string,
+    text: string,
+    images: ChatFile[],
+    resume?: { sourceRunId: string; messageId: string },
+  ) {
     const runId = randomUUID(),
       now = Date.now();
     this.db.exec('BEGIN IMMEDIATE');
@@ -342,6 +359,16 @@ export class Store {
         .run(runId, conversationId, 'queued', null, now, now);
       this.writeMessage(conversationId, runId, 'user', text, '', images);
       this.db.prepare('INSERT INTO run_queue(run_id) VALUES (?)').run(runId);
+      if (resume) {
+        this.db
+          .prepare('INSERT INTO run_resumptions VALUES (?,?,?)')
+          .run(resume.sourceRunId, runId, resume.messageId);
+        this.db
+          .prepare(
+            'UPDATE run_queue SET bypass_pause=1,priority=(SELECT coalesce(max(priority),0)+1 FROM run_queue) WHERE run_id=?',
+          )
+          .run(runId);
+      }
       this.touch(conversationId);
       this.db.exec('COMMIT');
       return runId;

@@ -191,7 +191,10 @@ test('work states survive reload, distinguish failures and expose an overview of
         await expect(
           page.getByRole('button', { name: 'Invia risposta', exact: true }),
         ).toBeVisible();
-      else await expect(status).toContainText('Motivo del cambiamento di stato');
+      else if (value === 'cancelled') {
+        await expect(status).not.toContainText('Motivo del cambiamento di stato');
+        await expect(status.getByRole('button', { name: 'Riprendi task' })).toBeVisible();
+      } else await expect(status).toContainText('Motivo del cambiamento di stato');
       await page.unroute(`**${base}`);
       await page.unroute('**/api/conversations');
     }

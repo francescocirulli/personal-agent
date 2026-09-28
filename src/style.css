@@ -4114,6 +4114,33 @@ button svg {
 .work-stop:disabled {
   opacity: 0.8;
 }
+.work-status-stopped {
+  background: #252525;
+  border-color: #484848;
+  border-left: 3px solid #b9a17d;
+}
+.work-status-stopped .work-cancelled {
+  color: #d5c1a4;
+}
+.work-status-stopped .work-status-heading {
+  margin-bottom: 6px;
+}
+.work-resume {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--signature);
+  border-radius: 10px;
+  background: var(--signature-surface);
+  color: #e1edd9;
+  font-weight: 650;
+}
+.work-resume:hover:not(:disabled) {
+  background: #404d38;
+}
 .work-status > p {
   margin: 4px 0 8px;
   font-size: 13px;

@@ -109,6 +109,189 @@ process.stdin.on('end', () => {
   };
 }
 
+for (const agent of ['claude', 'codex'] as const) {
+  test(`resume ${agent}: keeps the session and original files, is idempotent, and preserves a paused backlog`, async () => {
+    const f = await fixture();
+    try {
+      const chat = f.store.create(agent, null, 'Resume');
+      const base = `/conversations/${chat.id}`;
+      const image = await sharp({
+        create: { width: 2, height: 2, channels: 3, background: '#ffffff' },
+      })
+        .jpeg()
+        .toBuffer();
+      const data = new FormData();
+      data.append('text', 'SLOW');
+      data.append(
+        'images',
+        new Blob([new Uint8Array(image)], { type: 'image/jpeg' }),
+        'original.jpg',
+      );
+      data.append('files', new Blob(['Original document'], { type: 'text/plain' }), 'original.txt');
+      const first = (await (await f.request(`${base}/turns`, data)).json()) as any;
+      await until(() => !!f.store.conversation(chat.id)?.session_id);
+      const session = f.store.conversation(chat.id)!.session_id;
+      await f.request(`${base}/queue/pause`, { paused: true });
+      const backlog = (await (
+        await f.request(`${base}/turns`, { text: 'Backlog remains paused' })
+      ).json()) as any;
+      await f.request(`${base}/cancel`, {});
+      await until(
+        () => f.store.runs(chat.id).find((r) => r.id === first.runId)?.status === 'cancelled',
+      );
+      const sourceMessage = f.store.messages(chat.id).find((m) => m.run_id === first.runId)!;
+      const replies = await Promise.all([
+        f.request(`${base}/runs/${first.runId}/resume`, {}),
+        f.request(`${base}/runs/${first.runId}/resume`, {}),
+      ]);
+      assert.ok(replies.every((r) => r.status === 202));
+      const [resume, duplicate] = (await Promise.all(replies.map((r) => r.json()))) as any[];
+      assert.equal(resume.runId, duplicate.runId);
+      await until(async () => (await f.calls()).filter((c) => c.type === 'start').length === 2);
+      const started = (await f.calls()).filter((c) => c.type === 'start')[1];
+      assert.ok(started.args.includes(session));
+      assert.ok(started.args.includes(agent === 'claude' ? '--resume' : 'resume'));
+      assert.equal(started.imageCount, 1);
+      assert.match(started.input, /Richiesta originale:\nSLOW/);
+      const documents = JSON.parse(
+        started.input.split('Documenti della conversazione: ')[1].split('\n')[0],
+      );
+      assert.ok(documents.some((doc: { name: string }) => doc.name === 'original.txt'));
+      for (const document of documents) {
+        assert.equal(await readFile(document.original, 'utf8'), 'Original document');
+        assert.match(await readFile(document.text, 'utf8'), /Original document/);
+      }
+      assert.doesNotMatch(started.input, /Backlog remains paused/);
+      const resumedMessage = f.store.messages(chat.id).find((m) => m.run_id === resume.runId)!;
+      assert.deepEqual(
+        f.store.messageFiles(resumedMessage.id),
+        f.store.messageFiles(sourceMessage.id),
+      );
+      assert.notEqual(resumedMessage.attachments![0].id, sourceMessage.attachments![0].id);
+      await f.request(`${base}/cancel`, {});
+      await until(
+        () => f.store.runs(chat.id).find((r) => r.id === resume.runId)?.status === 'cancelled',
+      );
+      const next = (await (
+        await f.request(`${base}/runs/${resume.runId}/resume`, {})
+      ).json()) as any;
+      await until(
+        () => f.store.runs(chat.id).find((r) => r.id === next.runId)?.status === 'complete',
+      );
+      const nextInput = (await f.calls()).filter((c) => c.type === 'start')[2].input;
+      assert.equal(nextInput.split('Richiesta originale:').length - 1, 1);
+      assert.equal(f.store.runs(chat.id).find((r) => r.id === first.runId)?.status, 'cancelled');
+      assert.equal(f.store.conversation(chat.id)?.queue_paused, 1);
+      assert.deepEqual(
+        f.store.queue(chat.id).map((m) => m.run_id),
+        [backlog.runId],
+      );
+      await f.restart();
+      const retry = (await (
+        await f.request(`${base}/runs/${first.runId}/resume`, {})
+      ).json()) as any;
+      assert.equal(retry.runId, resume.runId);
+      assert.equal(f.store.runs(chat.id).length, 4);
+      assert.equal((await f.calls()).filter((c) => c.type === 'start').length, 3);
+    } finally {
+      await f.close();
+    }
+  });
+}
+
+test('resume rejects foreign, stale, unfinished and unsaved requests and respects capacity', async () => {
+  const f = await fixture();
+  try {
+    const chat = f.store.create('codex', null, 'Resume guards');
+    const other = f.store.create('claude', null, 'Other');
+    const base = `/conversations/${chat.id}`;
+    const source = f.store.enqueue(chat.id, 'Original work', []);
+    f.store.db.prepare('DELETE FROM run_queue WHERE run_id=?').run(source);
+    for (const status of [
+      'queued',
+      'running',
+      'transcribing',
+      'complete',
+      'error',
+      'interrupted',
+      'awaiting_input',
+    ] as const) {
+      f.store.setRun(source, status);
+      assert.equal((await f.request(`${base}/runs/${source}/resume`, {})).status, 409);
+    }
+    f.store.setRun(source, 'cancelled');
+    assert.equal(
+      (await f.request(`/conversations/${other.id}/runs/${source}/resume`, {})).status,
+      404,
+    );
+    const newer = f.store.enqueue(chat.id, 'Newer', []);
+    f.store.db.prepare('DELETE FROM run_queue WHERE run_id=?').run(newer);
+    f.store.setRun(newer, 'complete');
+    assert.equal((await f.request(`${base}/runs/${source}/resume`, {})).status, 409);
+    f.store.setRun(newer, 'cancelled');
+    f.store.db.prepare('DELETE FROM messages WHERE run_id=?').run(newer);
+    assert.equal((await f.request(`${base}/runs/${newer}/resume`, {})).status, 409);
+    f.store.addMessage(chat.id, newer, 'user', 'Restored request');
+    f.config.maxRuns = 1;
+    await f.request(`/conversations/${other.id}/turns`, { text: 'SLOW' });
+    assert.equal((await f.request(`${base}/runs/${newer}/resume`, {})).status, 429);
+    assert.equal(f.store.runs(chat.id).length, 2);
+    // Origin validation covers the new mutation route as well.
+    const response = await f.request(base);
+    const origin = new URL(response.url).origin;
+    assert.equal(
+      (
+        await fetch(`${origin}/api${base}/runs/${newer}/resume`, {
+          method: 'POST',
+          headers: { Origin: 'https://untrusted.example', 'Content-Type': 'application/json' },
+          body: '{}',
+        })
+      ).status,
+      403,
+    );
+    // With no saved CLI session, continuation includes the existing conversation.
+    f.config.maxRuns = 2;
+    const resumed = (await (await f.request(`${base}/runs/${newer}/resume`, {})).json()) as any;
+    await until(
+      () => f.store.runs(chat.id).find((r) => r.id === resumed.runId)?.status === 'complete',
+    );
+    const call = (await f.calls()).find(
+      (c) => c.type === 'start' && c.input.includes('Restored request'),
+    );
+    assert.ok(call);
+    assert.ok(!call.args.includes('resume'));
+    assert.match(call.input, /Original work/);
+    assert.match(call.input, /Richiesta originale:\nRestored request/);
+    // Queue edits must remain effective even when the turn is a continuation.
+    f.store.setRun(resumed.runId, 'cancelled');
+    const requestMessage = f.store.resumeRequest(resumed.runId)!;
+    const editedId = f.store.enqueue(chat.id, 'Riprendi il lavoro fermato.', [], {
+      sourceRunId: resumed.runId,
+      messageId: requestMessage.id,
+    });
+    assert.equal(
+      (await f.request(`${base}/queue/${editedId}/edit`, { text: 'Controlla solo i test' })).status,
+      200,
+    );
+    await f.request(`${base}/queue/pause`, { paused: false });
+    await until(() => f.store.runs(chat.id).find((r) => r.id === editedId)?.status === 'complete');
+    assert.ok(
+      (await f.calls()).some(
+        (c) =>
+          c.type === 'start' &&
+          c.input.includes('Indicazioni per la ripresa:\nControlla solo i test'),
+      ),
+    );
+    f.store.remove(chat.id);
+    assert.equal(
+      f.store.db.prepare('SELECT count(*) AS count FROM run_resumptions').get()!.count,
+      0,
+    );
+  } finally {
+    await f.close();
+  }
+});
+
 test('queue persists, runs FIFO after failure and respects per-chat and global capacity', async () => {
   const f = await fixture();
   try {

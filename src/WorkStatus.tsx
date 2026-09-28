@@ -8,6 +8,8 @@ import {
   Square,
   TriangleAlert,
   FileDiff,
+  CirclePause,
+  Play,
 } from 'lucide-react';
 import type { Run, RunStatus } from '../server/store';
 import type { Detail } from './api';
@@ -32,7 +34,7 @@ const icons = {
   awaiting_input: CircleHelp,
   complete: CircleCheck,
   error: CircleX,
-  cancelled: Square,
+  cancelled: CirclePause,
   interrupted: TriangleAlert,
 };
 export function StatusBadge({
@@ -79,6 +81,7 @@ export function WorkStatus({
   activityOpen,
   onActivityOpenChange,
   onStop,
+  onResume,
 }: {
   chat: Detail;
   connected: boolean;
@@ -88,12 +91,18 @@ export function WorkStatus({
   activityOpen: boolean;
   onActivityOpenChange(open: boolean): void;
   onStop(): Promise<unknown>;
+  onResume(runId: string): Promise<unknown>;
 }) {
   const run = currentWork(chat.runs);
   const working = sending || busy(run?.status);
   const changes = useWorkChanges(chat);
   const [now, setNow] = useState(Date.now());
   const [stopping, setStopping] = useState(false);
+  const [resuming, setResuming] = useState(false);
+  const stopped = !working && run?.status === 'cancelled';
+  const canResume =
+    stopped &&
+    chat.messages.some((message) => message.run_id === run.id && message.role === 'user');
   useEffect(() => {
     if (!run || (!busy(run.status) && run.status !== 'queued')) return;
     setNow(Date.now());
@@ -103,18 +112,45 @@ export function WorkStatus({
   if (!run && !sending && !chat.activity.length && !changes) return null;
   const activity = chat.activity.filter((a) => a.run_id === run?.id).at(-1);
   return (
-    <section className="work-status" aria-label="Stato del lavoro">
+    <section
+      className={`work-status${stopped ? ' work-status-stopped' : ''}`}
+      aria-label="Stato del lavoro"
+    >
       {(run || working) && (
         <div className="work-status-heading">
           <StatusBadge status={run?.status || 'running'} paused={!!chat.queue_paused} />
           {run && (
             <small>
-              {run.status === 'queued' ? 'In attesa da ' : 'Durata '}
+              {run.status === 'queued' ? 'In attesa da ' : stopped ? '' : 'Durata '}
               {duration(
                 (busy(run.status) || run.status === 'queued' ? now : run.updated_at) -
                   run.created_at,
               )}
             </small>
+          )}
+          {canResume && (
+            <button
+              type="button"
+              className="work-resume"
+              aria-label="Riprendi task"
+              aria-busy={resuming}
+              disabled={resuming || !connected}
+              onClick={async () => {
+                setResuming(true);
+                try {
+                  await onResume(run.id);
+                } finally {
+                  setResuming(false);
+                }
+              }}
+            >
+              {resuming ? (
+                <LoaderCircle size={15} className="spin" aria-hidden="true" />
+              ) : (
+                <Play size={15} fill="currentColor" aria-hidden="true" />
+              )}
+              {resuming ? 'Riprendo…' : 'Riprendi'}
+            </button>
           )}
           {working && (
             <button
@@ -154,7 +190,7 @@ export function WorkStatus({
         </p>
       ) : run?.status === 'awaiting_input' ? (
         <p>Rispondi alla domanda nella chat per proseguire. Gli altri messaggi restano in pausa.</p>
-      ) : run?.error ? (
+      ) : stopped ? null : run?.error ? (
         <p>{run.error}</p>
       ) : !preview && activity && busy(run?.status) ? (
         <p className="work-latest" title={activity.text}>

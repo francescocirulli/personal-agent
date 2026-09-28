@@ -50,6 +50,8 @@ The runner launches `claude -p` or `codex exec`, captures structured output, and
 
 Cancellation terminates the process group and escalates after a grace period. At shutdown, new starts are blocked; after restart, previously active runs are marked interrupted instead of replaying actions. Pending messages can resume automatically unless their queue is paused.
 
+Explicit resume of the latest cancelled run creates a new queued turn in the same conversation, preserving the old outcome. The additive `run_resumptions` table links each source run to one continuation and its original request message, making repeated resume requests idempotent across restarts. The continuation reuses the current session, copies the original attachments, and asks the agent to inspect existing work before continuing. It bypasses queue pause for that turn only; global capacity, workspace Git locks, and shutdown guards still apply. No process checkpoint is restored.
+
 An explicit final-response marker, `<richiesta_input/>`, records a real need for user input and pauses the queue. It is removed from visible text. A direct user reply takes priority; remaining queued messages stay paused until resumed. A completed process indicates protocol completion, not independently verified task correctness.
 
 Forking a conversation copies history and attachments up to the selected response, agent/model/effort, repository, and tool selection. It does not copy the CLI session, browser session, queue, or uncommitted workspace state. The fork inherits the workspace mode and seeds a new CLI session from the copied history. Isolated forks get their own clone; shared forks reuse the same checkout, so they see its current files rather than a snapshot at the forked message.

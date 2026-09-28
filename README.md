@@ -159,6 +159,8 @@ Select a GitHub repository when creating a chat, or use a chat without a reposit
 
 Cancelling a chat waiting for the first shared clone does not interrupt other waiting chats. When all waiters cancel, the clone stops and its temporary directory is removed; a later chat can retry. Forks inherit the mode: a shared fork sees the same current files, not a snapshot of the repository at the selected message. Chats without a repository and chats created before this feature remain isolated.
 
+After stopping a task, use **Riprendi** on the **Fermato** card to continue it in the same chat. This starts a new turn with the saved session, original request, and attachments; it does not restore a process checkpoint. The agent is asked to check existing work before continuing. The stopped turn remains in history. Resume is available for the latest stopped task with a saved request; an audio recording stopped before transcription must be sent again. Resuming preserves any paused backlog and does not change the current draft.
+
 ### 7. Enable optional services
 
 **Voice:** set `OPENROUTER_API_KEY` and recreate the container. Speech uses separately billed audio APIs; text-only agent use does not need this key. The defaults are `openai/gpt-4o-transcribe`, `google/gemini-3.8-flash-lite-tts`, and voice `Kore`. These are code defaults, not a guarantee of current provider availability. Choose supported models and a compatible voice in the app's voice settings. Saved settings override `.env` defaults until reset.
