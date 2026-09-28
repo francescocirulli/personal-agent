@@ -95,6 +95,24 @@ curl --fail https://agent.example.com/healthz
 
 Caddy manages HTTPS certificates and streams server-sent events through its [reverse proxy](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy). If you use another proxy, preserve the original `Host` header, allow long-running SSE connections without buffering, support HTTP Range requests for audio, and allow request bodies large enough for attachments (four documents can total 80 MB). Do not cache `/api/*` responses. A proxy running in another container needs a shared Docker network; its `127.0.0.1` does not refer to the app container.
 
+#### Alternative: private access with Tailscale Serve
+
+If only your own devices need the app, you can skip the public domain, DNS, and open ports: [Tailscale Serve](https://tailscale.com/kb/1312/serve) publishes it over HTTPS inside your tailnet only. Install Tailscale on the server and on your phone, signed in to the same tailnet. On a Linux server:
+
+```sh
+curl -fsSL https://tailscale.com/install.sh | sudo sh
+sudo tailscale up --hostname=agent
+```
+
+In the Tailscale admin console, enable MagicDNS and HTTPS certificates, and consider disabling key expiry for the server so it does not silently leave the tailnet. Then publish the app:
+
+```sh
+sudo tailscale serve --bg --https=443 http://127.0.0.1:4310
+sudo tailscale serve status
+```
+
+The first run may print a link to enable Serve for the tailnet. Set `APP_ORIGIN` to the exact URL that `serve status` shows, for example `https://agent.your-tailnet.ts.net`, and recreate the app. Serve preserves the `Host` header and streams server-sent events, so no further proxy settings are needed. Use `serve`, not `funnel`: Funnel would expose the app to the whole internet. Keep a strong `APP_PASSWORD` anyway; it still protects the app from other devices in your tailnet.
+
 Open your HTTPS domain and sign in with `APP_PASSWORD`. On iPhone, open it in Safari and choose **Share → Add to Home Screen**. Microphone access and remote PWA features need a secure context. The server must stay running when the phone disconnects.
 
 ### 5. Authenticate your agents
@@ -107,7 +125,7 @@ Perform these steps yourself in your server terminal. Authentication belongs to 
 docker compose exec app claude setup-token
 ```
 
-Store the resulting token as `CLAUDE_CODE_OAUTH_TOKEN` in `.env`, then recreate the app:
+The token is the long `sk-ant-oat…` line printed at the end, not the code shown in the browser. Terminals often wrap it across lines, and copying a wrapped line can split or truncate it: check that you pasted it as a single line. Store the resulting token as `CLAUDE_CODE_OAUTH_TOKEN` in `.env`, then recreate the app:
 
 ```sh
 docker compose up -d --force-recreate app
@@ -257,18 +275,19 @@ For other container hosts, build the supplied Dockerfile, attach persistent stor
 
 ## Troubleshooting and limitations
 
-| Symptom                                 | What to check                                                                                              |
-| --------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| Container exits immediately             | Check logs and a 24+ character `APP_PASSWORD`; verify writable `/data`.                                    |
-| Host/origin rejected (HTTP 403)         | Match `APP_ORIGIN` to the exact public URL; preserve `Host` through the proxy.                             |
-| Login does not persist                  | Use HTTPS when `APP_ORIGIN` is HTTPS; secure cookies are not sent over ordinary HTTP.                      |
-| Updates arrive late or connections drop | Disable proxy buffering/caching for SSE and increase idle timeouts.                                        |
-| Agent executable or login fails         | Check bundled CLI versions, selected agent, subscription login, and Codex home path.                       |
-| Audio fails                             | Check OpenRouter credentials, account balance, model availability, and saved voice settings.               |
-| Chromium cannot launch                  | In Docker, rebuild the image and check memory; locally install the Playwright browser and OS dependencies. |
-| Repository operations fail              | Check `gh auth status`, repository permissions, Git credential helper, and commit identity.                |
-| Native dependency installation fails    | Use Node 22.13+ and install Python 3, make, and a C/C++ toolchain; Docker includes them.                   |
-| Local changes block branch switching    | Commit or otherwise resolve them yourself; the app does not automatically stash or reset.                  |
+| Symptom                                            | What to check                                                                                                |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Container exits immediately                        | Check logs and a 24+ character `APP_PASSWORD`; verify writable `/data`.                                      |
+| Host/origin rejected (HTTP 403)                    | Match `APP_ORIGIN` to the exact public URL; preserve `Host` through the proxy.                               |
+| Login does not persist                             | Use HTTPS when `APP_ORIGIN` is HTTPS; secure cookies are not sent over ordinary HTTP.                        |
+| Updates arrive late or connections drop            | Disable proxy buffering/caching for SSE and increase idle timeouts.                                          |
+| Agent executable or login fails                    | Check bundled CLI versions, selected agent, subscription login, and Codex home path.                         |
+| Claude replies `401 OAuth access token is invalid` | Check that `CLAUDE_CODE_OAUTH_TOKEN` was pasted whole, on one line; a wrapped terminal copy can truncate it. |
+| Audio fails                                        | Check OpenRouter credentials, account balance, model availability, and saved voice settings.                 |
+| Chromium cannot launch                             | In Docker, rebuild the image and check memory; locally install the Playwright browser and OS dependencies.   |
+| Repository operations fail                         | Check `gh auth status`, repository permissions, Git credential helper, and commit identity.                  |
+| Native dependency installation fails               | Use Node 22.13+ and install Python 3, make, and a C/C++ toolchain; Docker includes them.                     |
+| Local changes block branch switching               | Commit or otherwise resolve them yourself; the app does not automatically stash or reset.                    |
 
 The app is an early implementation. The server keeps tasks running while your phone is offline, but mobile browsers may suspend microphone capture and playback in the background. The built-in browser has its own cookies per chat and does not inherit the phone's logins. Persistent storage and shell access are shared within your instance; browser and environment filtering do not turn this into a multi-user security boundary.
 
