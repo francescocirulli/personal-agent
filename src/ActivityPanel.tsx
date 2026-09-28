@@ -1,5 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
-import { CircleDot, CircleX, TriangleAlert, ChevronDown } from 'lucide-react';
+import { CircleDot, CircleX, TriangleAlert, ChevronDown, ListTodo } from 'lucide-react';
 import type { Activity } from '../server/store';
 
 export function ActivityPanel({
@@ -62,11 +62,12 @@ export function ActivityPanel({
         aria-controls={id}
         onClick={() => onOpenChange(!open)}
       >
+        <ListTodo size={16} aria-hidden="true" />
         {compact ? 'Attività' : 'Attività del lavoro'}
         <span className="activity-count" aria-hidden="true">
           {activity.length}
         </span>
-        <ChevronDown size={16} aria-hidden="true" />
+        <ChevronDown size={16} className="activity-chevron" aria-hidden="true" />
       </button>
       <div id={id} hidden={!open}>
         {open && (

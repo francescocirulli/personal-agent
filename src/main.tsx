@@ -26,6 +26,7 @@ import {
   Check,
   ChevronLeft,
   FolderGit2,
+  Filter,
   FileDiff,
   GitFork,
   Headphones,
@@ -868,16 +869,29 @@ function App() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </label>
-        <button
-          type="button"
-          className="work-filter"
-          aria-pressed={workOnly}
-          onClick={() => setWorkOnly(!workOnly)}
-        >
-          {workOnly ? 'Mostra tutte le chat' : 'Lavori in corso e da seguire'}
-        </button>
-        <div className="section-label">
-          CONVERSAZIONI <span>{chats.length}</span>
+        <div className="conversation-heading">
+          <div className="section-label">
+            CONVERSAZIONI <span>{chats.length}</span>
+          </div>
+          <button
+            type="button"
+            className="work-filter"
+            aria-label="Da seguire: filtra i lavori in corso o che richiedono attenzione"
+            title={
+              workOnly
+                ? 'Filtro attivo: premi per mostrare tutte le chat'
+                : 'Mostra solo lavori in corso, in coda, in attesa di risposta, in errore o interrotti'
+            }
+            aria-pressed={workOnly}
+            onClick={() => setWorkOnly(!workOnly)}
+          >
+            {workOnly ? (
+              <Check size={15} aria-hidden="true" />
+            ) : (
+              <Filter size={15} aria-hidden="true" />
+            )}
+            Da seguire
+          </button>
         </div>
         <nav className="chat-list" aria-label="Storico chat">
           {!!search.trim() && (
@@ -1328,6 +1342,7 @@ function App() {
                     type="button"
                     className="diff-open"
                     aria-label="Modifiche della chat"
+                    title="Apri le modifiche della chat"
                     onClick={() => {
                       stopVoice();
                       setDiffMode(undefined);

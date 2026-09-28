@@ -7,6 +7,7 @@ import {
   LoaderCircle,
   Square,
   TriangleAlert,
+  FileDiff,
 } from 'lucide-react';
 import type { Run, RunStatus } from '../server/store';
 import type { Detail } from './api';
@@ -86,12 +87,13 @@ export function WorkStatus({
   preview: string;
   activityOpen: boolean;
   onActivityOpenChange(open: boolean): void;
-  onStop(): void;
+  onStop(): Promise<unknown>;
 }) {
   const run = currentWork(chat.runs);
   const working = sending || busy(run?.status);
   const changes = useWorkChanges(chat);
   const [now, setNow] = useState(Date.now());
+  const [stopping, setStopping] = useState(false);
   useEffect(() => {
     if (!run || (!busy(run.status) && run.status !== 'queued')) return;
     setNow(Date.now());
@@ -115,8 +117,28 @@ export function WorkStatus({
             </small>
           )}
           {working && (
-            <button type="button" className="work-stop" onClick={onStop} aria-label="Ferma task">
-              <Square size={12} /> Ferma
+            <button
+              type="button"
+              className="work-stop"
+              disabled={stopping}
+              aria-label="Ferma task"
+              aria-busy={stopping}
+              title="Interrompi il lavoro in esecuzione"
+              onClick={async () => {
+                setStopping(true);
+                try {
+                  await onStop();
+                } finally {
+                  setStopping(false);
+                }
+              }}
+            >
+              {stopping ? (
+                <LoaderCircle size={15} className="spin" aria-hidden="true" />
+              ) : (
+                <Square size={13} fill="currentColor" aria-hidden="true" />
+              )}
+              {stopping ? 'Arresto…' : 'Ferma'}
             </button>
           )}
         </div>
@@ -161,7 +183,11 @@ export function WorkStatus({
               }
               onClick={() => onChanges(changes.mode)}
             >
-              Modifiche · {changes.total}
+              <FileDiff size={16} aria-hidden="true" />
+              Modifiche
+              <span className="work-tool-count" aria-hidden="true">
+                {changes.total}
+              </span>
             </button>
           </div>
         )}

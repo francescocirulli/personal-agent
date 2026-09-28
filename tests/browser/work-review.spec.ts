@@ -196,10 +196,15 @@ test('work states survive reload, distinguish failures and expose an overview of
       await page.unroute('**/api/conversations');
     }
     await page.getByRole('button', { name: 'Apri menu', exact: true }).click();
-    await page.getByRole('button', { name: 'Lavori in corso e da seguire', exact: true }).click();
+    const workFilter = page.getByRole('button', { name: /^Da seguire:/ });
+    await expect(workFilter).toHaveAttribute('aria-pressed', 'false');
+    await workFilter.click();
+    await expect(workFilter).toHaveAttribute('aria-pressed', 'true');
     await expect(
       page.getByRole('button', { name: 'Stati verificabili Codex', exact: true }),
     ).toBeVisible();
+    await workFilter.press('Space');
+    await expect(workFilter).toHaveAttribute('aria-pressed', 'false');
     await page.getByRole('button', { name: 'Stati verificabili Codex', exact: true }).click();
     await expect(page.locator('.chat-title')).toHaveText('Stati verificabili');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
@@ -277,7 +282,7 @@ test('work card uses the full Git count and hides unavailable or empty compariso
   try {
     await page.goto(`/?chat=${chat.id}`);
     const action = page.getByRole('button', { name: /Apri modifiche/ });
-    await expect(action).toHaveText('Modifiche · 501');
+    await expect(action).toHaveText(/Modifiche\s*501/);
     state = 'error';
     await page.evaluate(() => window.dispatchEvent(new Event('git-change')));
     await expect(action).toHaveCount(0);
@@ -291,7 +296,7 @@ test('work card uses the full Git count and hides unavailable or empty compariso
     await expect(action).toHaveCount(0);
     state = 'files';
     await page.evaluate(() => window.dispatchEvent(new Event('git-change')));
-    await expect(action).toHaveText('Modifiche · 501');
+    await expect(action).toHaveText(/Modifiche\s*501/);
   } finally {
     await request.post(`/api/conversations/${chat.id}/delete`, { data: {} });
   }

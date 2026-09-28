@@ -58,6 +58,26 @@ for (const viewport of [
       }
       if (viewport.width <= 640)
         await page.getByRole('button', { name: 'Apri menu', exact: true }).click();
+      const workFilter = page.getByRole('button', { name: /^Da seguire:/ });
+      await expect(workFilter).toBeVisible();
+      // Wait for the sidebar slide-in before measuring its controls.
+      await workFilter.click({ trial: true });
+      const { filterBounds, headingBounds } = await page
+        .locator('.conversation-heading')
+        .evaluate((heading) => ({
+          filterBounds: heading.querySelector('.work-filter')!.getBoundingClientRect().toJSON(),
+          headingBounds: heading.querySelector('.section-label')!.getBoundingClientRect().toJSON(),
+        }));
+      expect(filterBounds.height).toBeGreaterThanOrEqual(44);
+      expect(filterBounds.x).toBeGreaterThanOrEqual(headingBounds.x + headingBounds.width);
+      expect(filterBounds.x + filterBounds.width).toBeLessThanOrEqual(viewport.width);
+      expect(headingBounds.y).toBeGreaterThanOrEqual(filterBounds.y);
+      expect(headingBounds.y + headingBounds.height).toBeLessThanOrEqual(
+        filterBounds.y + filterBounds.height,
+      );
+      await page.screenshot({
+        path: `test-results/layout-sidebar-${viewport.width}-${test.info().project.name}.png`,
+      });
       await page.getByRole('button', { name: 'Impostazioni', exact: true }).click();
       const dialog = page.getByRole('dialog', { name: 'Impostazioni voce', exact: true });
       await expect(dialog).toBeVisible();
