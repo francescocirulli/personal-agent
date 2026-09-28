@@ -148,6 +148,13 @@ the model through structured events; Codex uses the exact thread's model metadat
 in its local state database. Updates appear during execution and survive reloads.
 If the CLI has not reported a model or its metadata format is unsupported, the UI
 shows that it has not been detected; catalog order is never treated as a default.
+While a task runs, the same picker shows the token count from the most recent
+model request. Codex also reports that request's context-window size, so the UI
+can calculate a percentage. Claude Code's headless stream reports prompt tokens
+but not the window size, so the UI shows the count without inventing a percentage.
+Compaction remains enabled: Claude Code is launched with `--autocompact auto`,
+and Codex keeps its CLI model-default threshold unless a Codex configuration
+overrides it.
 
 ### 6. Connect GitHub (optional)
 

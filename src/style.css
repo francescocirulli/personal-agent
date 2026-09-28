@@ -2470,7 +2470,8 @@ button svg {
   font-size: 12px;
 }
 .model-picker-agent,
-.model-picker-effort {
+.model-picker-effort,
+.model-picker-context {
   flex-shrink: 0;
   color: #b3b3b3;
 }
@@ -2484,6 +2485,18 @@ button svg {
   content: '·';
   margin-right: 7px;
   color: #858585;
+}
+.model-picker-context {
+  flex-shrink: 0;
+  color: #a9c8ae;
+  font-variant-numeric: tabular-nums;
+}
+.model-picker-observed p {
+  margin: 0;
+}
+.model-picker-observed p + p {
+  margin-top: 5px;
+  color: #b8b8b8;
 }
 .model-picker-panel {
   position: absolute;
@@ -2623,6 +2636,9 @@ button svg {
   }
   .model-picker-effort::before {
     content: none;
+  }
+  .model-picker-context {
+    font-size: 10px;
   }
   .model-picker-panel {
     right: auto;

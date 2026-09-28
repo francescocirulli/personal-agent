@@ -1,9 +1,11 @@
 import { reportedModel } from './session-model';
 
-export type Normalized = {
-  type: 'session' | 'model' | 'text' | 'status' | 'failure';
-  value: string;
-};
+export type Normalized =
+  | { type: 'context'; inputTokens: number; contextWindow: number | null }
+  | {
+      type: 'session' | 'model' | 'text' | 'status' | 'failure';
+      value: string;
+    };
 // Only selected protocol fields reach the UI; no raw tool output, credentials or reasoning.
 export function normalize(agent: 'claude' | 'codex', e: any): Normalized[] {
   const out: Normalized[] = [];
@@ -18,6 +20,14 @@ export function normalize(agent: 'claude' | 'codex', e: any): Normalized[] {
           : null,
     );
     if (model) out.push({ type: 'model', value: model });
+    if (e.type === 'assistant' && !e.parent_tool_use_id) {
+      const usage = e.message?.usage;
+      const input = usage?.input_tokens;
+      const cached = usage?.cache_read_input_tokens || 0;
+      const created = usage?.cache_creation_input_tokens || 0;
+      if ([input, cached, created].every((value) => Number.isSafeInteger(value) && value >= 0))
+        out.push({ type: 'context', inputTokens: input + cached + created, contextWindow: null });
+    }
     if (e.type === 'assistant' && !e.parent_tool_use_id)
       for (const b of e.message?.content || []) {
         if (b.type === 'text') out.push({ type: 'text', value: b.text });

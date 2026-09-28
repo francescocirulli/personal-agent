@@ -89,6 +89,23 @@ export function ModelPicker({ chat, onSaved }: { chat: Chat; onSaved(): Promise<
     : chat.modelPending
       ? 'In attesa del modello comunicato dalla CLI.'
       : 'Modello effettivo non ancora rilevato.';
+  const contextUsage = chat.contextUsage;
+  const contextCount = contextUsage
+    ? new Intl.NumberFormat('it-IT', { notation: 'compact', maximumFractionDigits: 1 }).format(
+        contextUsage.inputTokens,
+      )
+    : '';
+  const contextPercentage =
+    contextUsage?.contextWindow && contextUsage.contextWindow > 0
+      ? Math.min(100, (contextUsage.inputTokens / contextUsage.contextWindow) * 100)
+      : null;
+  const contextLabel = contextUsage
+    ? `Ultimo contesto inviato alla CLI: ${contextUsage.inputTokens.toLocaleString('it-IT')} token${
+        contextUsage.contextWindow
+          ? ` su ${contextUsage.contextWindow.toLocaleString('it-IT')} (${contextPercentage!.toLocaleString('it-IT', { maximumFractionDigits: 1 })}%)`
+          : ''
+      }${contextUsage.state === 'running' ? ' · aggiornato durante il lavoro' : ' · ultima rilevazione'}`
+    : 'Contesto non ancora comunicato dalla CLI.';
   return (
     <details className="model-picker">
       <summary>
@@ -107,13 +124,22 @@ export function ModelPicker({ chat, onSaved }: { chat: Chat; onSaved(): Promise<
           <span className="model-picker-effort">
             {automatic ? 'effort auto' : (chat.effort ?? defaultEffort)}
           </span>
+          {contextUsage && (
+            <span className="model-picker-context" title={contextLabel}>
+              {contextCount}
+              {contextPercentage !== null
+                ? ` · ${contextPercentage.toLocaleString('it-IT', { maximumFractionDigits: 0 })}%`
+                : ' token'}
+            </span>
+          )}
         </span>
         <ChevronDown size={16} aria-hidden="true" />
       </summary>
       <div className="model-picker-panel">
-        <p className="model-picker-observed" role="status">
-          {modelStatus}
-        </p>
+        <div className="model-picker-observed" role="status">
+          <p>{modelStatus}</p>
+          <p>{contextLabel}</p>
+        </div>
         <p className="settings-note">
           {chat.routing?.enabled
             ? `Riserva: ${modelName} · ${chat.effort}. Una scelta manuale disattiva JEV.`

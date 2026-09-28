@@ -58,6 +58,15 @@ run. The detail endpoint can also resolve pre-existing idle Codex sessions witho
 rewriting historical runs. SSE changes refresh the UI; session resets and new runs
 without observations do not inherit an old model as their current selection.
 
+Latest-request context usage is stored in the cascading `run_context` table.
+Claude's main-assistant events provide input and cache token counts. Codex's exec
+JSON does not report its context window, so the runner reads only the newest
+`token_count` event from the exact thread rollout (bounded to the file's last
+256 KiB); it uses `last_token_usage.input_tokens`, never cumulative session totals.
+The UI calculates a percentage only when the CLI provides a context-window size.
+Claude runs explicitly request automatic compaction with `--autocompact auto`;
+Codex retains its configured/model default automatic-compaction threshold.
+
 Cancellation terminates the process group and escalates after a grace period. At shutdown, new starts are blocked; after restart, previously active runs are marked interrupted instead of replaying actions. Pending messages can resume automatically unless their queue is paused.
 
 Explicit resume of the latest cancelled run creates a new queued turn in the same conversation, preserving the old outcome. The additive `run_resumptions` table links each source run to one continuation and its original request message, making repeated resume requests idempotent across restarts. The continuation reuses the current session, copies the original attachments, and asks the agent to inspect existing work before continuing. It bypasses queue pause for that turn only; global capacity, workspace Git locks, and shutdown guards still apply. No process checkpoint is restored.

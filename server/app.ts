@@ -346,6 +346,20 @@ export function createApp(config: Config, routingDependencies: RoutingDependenci
               publish({ type: 'changed', conversationId: chat.id });
             }
           }
+          if (e.type === 'context') {
+            store.db
+              .prepare(
+                'INSERT INTO run_context(run_id,session_id,input_tokens,context_window,observed_at) VALUES (?,?,?,?,?) ON CONFLICT(run_id) DO UPDATE SET session_id=excluded.session_id,input_tokens=excluded.input_tokens,context_window=excluded.context_window,observed_at=excluded.observed_at',
+              )
+              .run(
+                runId,
+                store.conversation(chat.id)?.session_id ?? '',
+                e.inputTokens,
+                e.contextWindow,
+                Date.now(),
+              );
+            publish({ type: 'changed', conversationId: chat.id });
+          }
           if (e.type === 'text') {
             lastText = e.value;
             publish({
@@ -1077,6 +1091,18 @@ export function createApp(config: Config, routingDependencies: RoutingDependenci
     const runs = store.runs(chat.id);
     const latest = runs.findLast((run) => run.status !== 'queued');
     const running = latest?.status === 'running' || latest?.status === 'transcribing';
+    const contextUsage =
+      latest?.context_tokens !== null &&
+      latest?.context_tokens !== undefined &&
+      latest.context_observed_at &&
+      chat.session_id
+        ? {
+            inputTokens: latest.context_tokens,
+            contextWindow: latest.context_window ?? null,
+            observedAt: latest.context_observed_at,
+            state: running ? 'running' : 'last',
+          }
+        : null;
     const saved = chat.session_id
       ? store.db
           .prepare('SELECT model FROM run_models WHERE run_id=? AND session_id=?')
@@ -1093,6 +1119,7 @@ export function createApp(config: Config, routingDependencies: RoutingDependenci
       ...chat,
       actualModel: model ? { id: model, state: running ? 'running' : 'last' } : null,
       modelPending: running && !model,
+      contextUsage,
       messages: store.messages(chat.id),
       runs,
       activity: store.activities(chat.id),

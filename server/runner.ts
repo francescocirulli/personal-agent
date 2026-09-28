@@ -11,7 +11,7 @@ import type { Conversation } from './store';
 import { normalize, type Normalized } from './protocol';
 import type { McpAccess, McpAgentServer } from './mcp';
 import { toolEnvironment } from './tool-environment';
-import { codexSessionModel } from './session-model';
+import { codexSessionInfo } from './session-model';
 
 const VOICE_RULES = `Rispondi in italiano. Segui le istruzioni dell'utente e le regole del repository; leggi CLAUDE.md e AGENTS.md applicabili anche se non caricati automaticamente dalla tua CLI. Puoi svolgere il lavoro richiesto autonomamente nel rispetto di quelle regole. Concludi ogni risposta con <voce>una versione parlata chiara, senza codice o URL</voce>. Nella discussione includi la risposta e le domande necessarie; a fine task riassumi l'esito reale. Il resto della risposta può contenere markdown e dettagli tecnici. Non dichiarare risultati non verificati. Il bridge può anteporre alla richiesta un catalogo delle skill aggiornato per il turno corrente: usa quel catalogo per decidere quali skill globali dell’app sono disponibili, sostituendo le assegnazioni dei turni precedenti.
 Se il lavoro non può proseguire senza una risposta o un intervento dell’utente, formula la domanda o indica l’intervento nella risposta finale e inserisci il marcatore <richiesta_input/> su una riga separata fuori dai blocchi di codice, prima del tag voce. Usalo solo per una dipendenza reale; non per offerte facoltative di continuare. Il bridge mostrerà «Serve una risposta» e metterà in pausa la coda.
@@ -68,6 +68,8 @@ export function commandFor(
         '-p',
         '--effort',
         chat.effort ?? defaultEffort,
+        '--autocompact',
+        'auto',
         ...(imagePaths.length ? ['--input-format', 'stream-json'] : []),
         ...(chat.model ? ['--model', chat.model] : []),
         '--output-format',
@@ -339,14 +341,26 @@ export async function runAgent(
   let modelRead: Promise<void> | undefined;
   let sessionId: string | undefined;
   let lastModel: string | null = null;
+  let lastContext = '';
   const startedAt = Date.now();
   const refreshModel = () => {
     if (modelRead || !sessionId || signal.aborted) return modelRead;
-    modelRead = codexSessionModel(sessionId, startedAt)
-      .then((model) => {
-        if (model && model !== lastModel && !signal.aborted) {
-          lastModel = model;
-          emit({ type: 'model', value: model });
+    modelRead = codexSessionInfo(sessionId, startedAt)
+      .then((info) => {
+        if (info.model && info.model !== lastModel && !signal.aborted) {
+          lastModel = info.model;
+          emit({ type: 'model', value: info.model });
+        }
+        if (info.contextTokens !== null && info.observedAt !== null && !signal.aborted) {
+          const key = `${info.contextTokens}/${info.contextWindow ?? ''}/${info.observedAt}`;
+          if (key !== lastContext) {
+            lastContext = key;
+            emit({
+              type: 'context',
+              inputTokens: info.contextTokens,
+              contextWindow: info.contextWindow,
+            });
+          }
         }
       })
       .finally(() => {
@@ -387,7 +401,7 @@ export async function runAgent(
           if (chat.agent === 'codex' && e.type === 'session') {
             sessionId = e.value;
             void refreshModel();
-            if (!modelTimer) modelTimer = setInterval(() => void refreshModel(), 1000);
+            if (!modelTimer) modelTimer = setInterval(() => void refreshModel(), 1500);
           }
         }
       },

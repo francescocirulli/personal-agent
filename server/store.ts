@@ -53,6 +53,9 @@ export interface Message {
 }
 export interface Run {
   actual_model?: string | null;
+  context_tokens?: number | null;
+  context_window?: number | null;
+  context_observed_at?: number | null;
   routing?: RoutingRecord;
   id: string;
   conversation_id: string;
@@ -90,6 +93,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS run_routing (run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS run_models (run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE, model TEXT NOT NULL, session_id TEXT);
+      CREATE TABLE IF NOT EXISTS run_context (run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE, session_id TEXT NOT NULL, input_tokens INTEGER NOT NULL, context_window INTEGER, observed_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS run_resumptions (
         source_run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE,
         run_id TEXT NOT NULL UNIQUE REFERENCES runs(id) ON DELETE CASCADE,
@@ -483,7 +487,7 @@ export class Store {
   runs(id: string) {
     return this.db
       .prepare(
-        'SELECT r.*,j.data AS routing,m.model AS actual_model FROM runs r LEFT JOIN run_routing j ON j.run_id=r.id LEFT JOIN run_models m ON m.run_id=r.id WHERE conversation_id=? ORDER BY created_at,r.rowid',
+        'SELECT r.*,j.data AS routing,m.model AS actual_model,c.input_tokens AS context_tokens,c.context_window,c.observed_at AS context_observed_at FROM runs r LEFT JOIN run_routing j ON j.run_id=r.id LEFT JOIN run_models m ON m.run_id=r.id LEFT JOIN run_context c ON c.run_id=r.id WHERE conversation_id=? ORDER BY created_at,r.rowid',
       )
       .all(id)
       .map(({ routing, ...run }) => ({

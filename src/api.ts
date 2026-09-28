@@ -12,6 +12,12 @@ export type Chat = Conversation & {
   unread_count?: number;
   actualModel?: { id: string; state: 'running' | 'last' } | null;
   modelPending?: boolean;
+  contextUsage?: {
+    inputTokens: number;
+    contextWindow: number | null;
+    observedAt: number;
+    state: 'running' | 'last';
+  } | null;
 };
 export type Detail = Chat & {
   messages: Message[];
