@@ -109,6 +109,7 @@ function App() {
     [sending, setSending] = useState(false),
     [creating, setCreating] = useState(false);
   const [repoRequired, setRepoRequired] = useState(false);
+  const [projectCreation, setProjectCreation] = useState(false);
   const [chatRouting, setChatRouting] = useState<RoutingConfig | null>(null);
   const [chatTools, setChatTools] = useState<ChatTools>({ mcp: null, skills: [] });
   useEffect(() => {
@@ -422,6 +423,8 @@ function App() {
     if (!create) {
       setRepo('');
       setRepoRequired(false);
+      setWorkspaceMode(undefined);
+      setProjectCreation(false);
     }
   }, [create]);
   useEffect(() => {
@@ -907,54 +910,76 @@ function App() {
             />
           )}
           {[...chatGroups.entries()].map(([project, items]) => (
-            <details className="chat-group" key={project} open>
-              <summary title={project || 'Chat libere'}>
-                {project ? <FolderGit2 size={15} /> : <MessageCircle size={15} />}
-                <span>{project || 'Chat libere'}</span>
-                <small>{items.length}</small>
-              </summary>
-              <section aria-label={project || 'Chat libere'}>
-                {items.map((c) => (
-                  <div className={`chat-row ${selected === c.id ? 'active' : ''}`} key={c.id}>
-                    <button
-                      className={`chat-link ${selected === c.id ? 'active' : ''}`}
-                      aria-current={selected === c.id ? 'page' : undefined}
-                      aria-label={`${c.title} ${agentName(c.agent)}`}
-                      aria-describedby={c.status ? `work-${c.id}` : undefined}
-                      onClick={() => choose(c.id)}
-                    >
-                      <span>
-                        <strong>{c.title}</strong>
-                        <small>{agentName(c.agent)}</small>
-                        <StatusBadge
-                          id={`work-${c.id}`}
-                          status={c.status}
-                          paused={!!c.queue_paused}
-                        />
-                      </span>
-                      {!!c.unread_count && (
-                        <span
-                          className="unread-dot"
-                          role="img"
-                          aria-label={
-                            c.unread_count === 1
-                              ? 'Una risposta non letta'
-                              : `${c.unread_count} risposte non lette`
-                          }
-                        />
-                      )}
-                    </button>
-                    <button
-                      className="icon-button chat-menu-button"
-                      aria-label={`Menu chat: ${c.title}`}
-                      onClick={() => openChatMenu(c)}
-                    >
-                      <MoreHorizontal size={18} />
-                    </button>
-                  </div>
-                ))}
-              </section>
-            </details>
+            <div className={`chat-group-container ${project ? 'has-project' : ''}`} key={project}>
+              <details className="chat-group" open>
+                <summary title={project || 'Chat libere'}>
+                  {project ? <FolderGit2 size={15} /> : <MessageCircle size={15} />}
+                  <span>{project || 'Chat libere'}</span>
+                  <small>{items.length}</small>
+                </summary>
+                <section aria-label={project || 'Chat libere'}>
+                  {items.map((c) => (
+                    <div className={`chat-row ${selected === c.id ? 'active' : ''}`} key={c.id}>
+                      <button
+                        className={`chat-link ${selected === c.id ? 'active' : ''}`}
+                        aria-current={selected === c.id ? 'page' : undefined}
+                        aria-label={`${c.title} ${agentName(c.agent)}`}
+                        aria-describedby={c.status ? `work-${c.id}` : undefined}
+                        onClick={() => choose(c.id)}
+                      >
+                        <span>
+                          <strong>{c.title}</strong>
+                          <small>{agentName(c.agent)}</small>
+                          <StatusBadge
+                            id={`work-${c.id}`}
+                            status={c.status}
+                            paused={!!c.queue_paused}
+                          />
+                        </span>
+                        {!!c.unread_count && (
+                          <span
+                            className="unread-dot"
+                            role="img"
+                            aria-label={
+                              c.unread_count === 1
+                                ? 'Una risposta non letta'
+                                : `${c.unread_count} risposte non lette`
+                            }
+                          />
+                        )}
+                      </button>
+                      <button
+                        className="icon-button chat-menu-button"
+                        aria-label={`Menu chat: ${c.title}`}
+                        onClick={() => openChatMenu(c)}
+                      >
+                        <MoreHorizontal size={18} />
+                      </button>
+                    </div>
+                  ))}
+                </section>
+              </details>
+              {project && (
+                <button
+                  type="button"
+                  className="icon-button project-new-chat"
+                  aria-label={`Nuova chat in ${project}`}
+                  title="Nuova chat nel progetto"
+                  onClick={() => {
+                    const source = current?.repo?.toLowerCase() === project ? current : items[0];
+                    setRepo(source.repo || project);
+                    setRepoRequired(true);
+                    setWorkspaceMode(undefined);
+                    setProjectCreation(true);
+                    setAgent(source.agent);
+                    setCreate(true);
+                    setSidebar(false);
+                  }}
+                >
+                  <Plus size={18} />
+                </button>
+              )}
+            </div>
           ))}
           {!!chats.length && !chatGroups.size && (
             <p className="sidebar-empty">Nessuna chat trovata.</p>
@@ -1717,7 +1742,11 @@ function App() {
             </button>
             <div className="eyebrow">NUOVA CONVERSAZIONE</div>
             <h2 id="new-title">Nuova chat</h2>
-            <p>Scegli un agente e, se serve, un repository.</p>
+            <p>
+              {projectCreation
+                ? 'Scegli un agente e una cartella di lavoro per questo progetto.'
+                : 'Scegli un agente e, se serve, un repository.'}
+            </p>
             <form onSubmit={newChat}>
               <label>Il tuo agente</label>
               <div className="agent-options">
@@ -1739,13 +1768,33 @@ function App() {
                   </button>
                 ))}
               </div>
-              <RepositoryPicker
-                value={repo}
-                onChange={(value, required) => {
-                  setRepo(value);
-                  setRepoRequired(required);
-                }}
-              />
+              {projectCreation ? (
+                <div className="repository-picker">
+                  <label>Progetto</label>
+                  <div className="selected-repository" aria-label="Progetto selezionato">
+                    <FolderGit2 size={18} />
+                    <span>
+                      <strong>{repo.split('/')[1]}</strong>
+                      <small>{repo.split('/')[0]}</small>
+                    </span>
+                    <button
+                      type="button"
+                      className="quiet"
+                      onClick={() => setProjectCreation(false)}
+                    >
+                      Cambia
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <RepositoryPicker
+                  value={repo}
+                  onChange={(value, required) => {
+                    setRepo(value);
+                    setRepoRequired(required);
+                  }}
+                />
+              )}
               {repoRequired && (
                 <WorkspaceModePicker
                   value={workspaceMode ?? settings?.workspaceMode ?? 'isolated'}
