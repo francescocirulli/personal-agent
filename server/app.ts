@@ -1,5 +1,6 @@
 import { parseAgentCommand } from '../src/agentCommands';
 import { runAgentCommand } from './agent-commands';
+import { AgentAccountService } from './agent-accounts';
 import { GitService, GitError } from './git';
 import { GitDiffService } from './git-diff';
 import {
@@ -72,6 +73,7 @@ const chatInput = z.object({
 });
 export function createApp(config: Config, routingDependencies: RoutingDependencies = {}) {
   const github = new GitHubService(config.demo);
+  const accounts = new AgentAccountService(config);
   const app = express(),
     store = new Store(config.dataDir);
   const defaults = { sttModel: config.sttModel, ttsModel: config.ttsModel, voice: config.voice };
@@ -650,6 +652,7 @@ export function createApp(config: Config, routingDependencies: RoutingDependenci
       workspaceMode: config.workspaceMode,
     }),
   );
+  app.get('/api/agent-accounts', async (_req, res) => res.json(await accounts.read()));
   function terminalBrowserEnabled() {
     if (!terminal.view().enabled)
       throw new HttpError(
@@ -1537,6 +1540,7 @@ export function createApp(config: Config, routingDependencies: RoutingDependenci
     terminal,
     async close() {
       closing = true;
+      await accounts.close();
       for (const handle of [...active.values(), ...gitOperations.values()])
         handle.controller.abort();
       await Promise.allSettled(

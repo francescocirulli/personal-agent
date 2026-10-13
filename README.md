@@ -117,6 +117,8 @@ Open your HTTPS domain and sign in with `APP_PASSWORD`. On iPhone, open it in Sa
 
 ### 5. Authenticate your agents
 
+Click **Spazio personale** at the bottom of the sidebar to open **Account e abbonamenti**. It shows the server CLI's current account, authentication method, and subscription plan when reported. **Aggiorna account** reads the status again after a login change. Claude Code uses `claude auth status --json`; Codex uses the app-server `account/read` method without requesting a token refresh or starting a model turn. Token-only Claude setups may omit identity and plan; missing fields are shown as unavailable. These are locally reported login details, not an online subscription validity or billing check. Demo mode does not consult real accounts.
+
 Perform these steps yourself in your server terminal. Authentication belongs to your instance; never send tokens or device codes through chat. Consult the provider's current subscription eligibility and terms before use.
 
 **Claude Code:** run the bundled token setup command and complete the browser flow:
