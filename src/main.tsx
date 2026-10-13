@@ -1,4 +1,5 @@
 import { CommandSuggestions } from './CommandSuggestions';
+import { AccountProfile } from './AccountProfile';
 import { SettingsTabs, type SettingsTab } from './SettingsTabs';
 import { ExperimentalSettings } from './ExperimentalSettings';
 import { ChatExperiments, ChatExperimentsPicker } from './ChatExperimentsPicker';
@@ -1007,12 +1008,7 @@ function App() {
           <button className="quiet" onClick={() => void openPreferences()}>
             <SettingsIcon size={16} /> Impostazioni
           </button>
-          <div className="profile">
-            <span className="avatar">TU</span>
-            <span>
-              Spazio personale<small>Claude Code · Codex</small>
-            </span>
-          </div>
+          <AccountProfile />
         </div>
       </aside>
       <main className="main">

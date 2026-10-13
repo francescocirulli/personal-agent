@@ -249,6 +249,9 @@ button svg {
 }
 .profile {
   display: flex;
+  width: 100%;
+  text-align: left;
+  min-height: 44px;
   gap: 10px;
   align-items: center;
   margin-top: 18px;
@@ -2881,6 +2884,32 @@ button svg {
 .branch-sheet::backdrop {
   background: #0009;
 }
+.account-card {
+  border: 1px solid #484848;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+.account-card h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.account-card dl {
+  margin: 0;
+}
+.account-card dt {
+  color: #aaa;
+  font-size: 12px;
+  margin-top: 12px;
+}
+.account-card dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+.account-card dl + p {
+  margin-top: 14px;
+}
 .branch-sheet-content {
   display: flex;
   flex-direction: column;
@@ -3260,7 +3289,8 @@ button svg {
     padding-top: 8px;
   }
   .profile {
-    display: none;
+    margin-top: 4px;
+    padding-top: 4px;
   }
   .empty-chat {
     min-height: 180px;
